@@ -100,7 +100,7 @@ export async function packProject({
   });
 
   if (!stagedWorkspacePackage) {
-    await copyProjectFiles(sourceFolder, appFolder, sourcePackage);
+    await copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
     await installProductionDependencies(appFolder);
   }
 
@@ -170,11 +170,15 @@ export async function resolveNodeVersion({
   throw new Error('No node versions available from nodejs.org index');
 }
 
-async function copyProjectFiles(
-  sourceFolder: string,
-  appFolder: string,
-  sourcePackage: PackageJson
-) {
+async function copyProjectFiles({
+  sourceFolder,
+  appFolder,
+  sourcePackage
+}: {
+  sourceFolder: string;
+  appFolder: string;
+  sourcePackage: PackageJson;
+}) {
   const entries = new Set(['package.json', '.npmrc', 'pnpm-workspace.yaml']);
 
   for (const lockFile of LOCK_FILES)

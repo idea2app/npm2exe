@@ -1,19 +1,17 @@
 import path from 'node:path';
 import { fs } from 'zx';
 import fg from 'fast-glob';
-import ignore from 'ignore';
+import gitignoreToGlob from 'gitignore-to-glob';
 import type { PackageJson } from 'type-fest';
-import { toPosixPath } from './utility.js';
 
-interface StageWorkspacePackageInput {
+interface ProjectFilesCopyInput {
   sourceFolder: string;
-  sourcePackage: PackageJson;
   appFolder: string;
-  copyProjectFiles(
-    sourceFolder: string,
-    appFolder: string,
-    sourcePackage: PackageJson
-  ): Promise<void>;
+  sourcePackage: PackageJson;
+}
+
+interface StageWorkspacePackageInput extends ProjectFilesCopyInput {
+  copyProjectFiles(input: ProjectFilesCopyInput): Promise<void>;
   installProductionDependencies(appFolder: string): Promise<void>;
 }
 
@@ -66,7 +64,11 @@ export async function stageWorkspacePackage({
   await fs.ensureDir(appFolder);
   await copyWorkspaceFiles(workspaceRoot, workspaceTempFolder);
   await installProductionDependencies(workspaceTempFolder);
-  await copyProjectFiles(stagedPackageFolder, appFolder, sourcePackage);
+  await copyProjectFiles({
+    sourceFolder: stagedPackageFolder,
+    appFolder,
+    sourcePackage
+  });
   await copyResolvedNodeModules({
     sourcePackageFolder: stagedPackageFolder,
     targetPackageFolder: appFolder,
@@ -109,35 +111,18 @@ async function findWorkspaceRoot(sourceFolder: string) {
 }
 
 async function copyWorkspaceFiles(sourceFolder: string, targetFolder: string) {
-  const matcher = await createGitIgnoreMatcher(sourceFolder);
   const relativePaths = await fg('**/*', {
     cwd: sourceFolder,
     dot: true,
     onlyFiles: false,
     followSymbolicLinks: false,
-    ignore: [
-      '.git/**',
-      '.temp/**',
-      'out/**',
-      'node_modules/**',
-      '**/.temp/**',
-      '**/out/**',
-      '**/node_modules/**'
-    ]
+    ignore: await createIgnorePatterns(sourceFolder)
   });
 
   for (const relativePath of relativePaths) {
     const from = path.join(sourceFolder, relativePath);
     const stats = await fs.lstat(from);
-    const normalizedPath = toPosixPath(relativePath);
     const to = path.join(targetFolder, relativePath);
-
-    if (
-      matcher.ignores(
-        stats.isDirectory() ? `${normalizedPath}/` : normalizedPath
-      )
-    )
-      continue;
 
     if (stats.isDirectory()) {
       await fs.ensureDir(to);
@@ -148,14 +133,21 @@ async function copyWorkspaceFiles(sourceFolder: string, targetFolder: string) {
   }
 }
 
-async function createGitIgnoreMatcher(sourceFolder: string) {
-  const matcher = ignore();
+async function createIgnorePatterns(sourceFolder: string) {
   const gitIgnorePath = path.join(sourceFolder, '.gitignore');
+  const baseIgnorePatterns = [
+    '.git/**',
+    '.temp/**',
+    'out/**',
+    'node_modules/**',
+    '**/.temp/**',
+    '**/out/**',
+    '**/node_modules/**'
+  ];
 
-  if (await fs.pathExists(gitIgnorePath))
-    matcher.add(await fs.readFile(gitIgnorePath, 'utf8'));
+  if (!(await fs.pathExists(gitIgnorePath))) return baseIgnorePatterns;
 
-  return matcher;
+  return [...baseIgnorePatterns, ...gitignoreToGlob(gitIgnorePath)];
 }
 
 async function copyResolvedNodeModules({
@@ -165,11 +157,7 @@ async function copyResolvedNodeModules({
 }: {
   sourcePackageFolder: string;
   targetPackageFolder: string;
-  copyProjectFiles(
-    sourceFolder: string,
-    appFolder: string,
-    sourcePackage: PackageJson
-  ): Promise<void>;
+  copyProjectFiles(input: ProjectFilesCopyInput): Promise<void>;
 }) {
   const sourceNodeModulesFolder = path.join(
     sourcePackageFolder,
@@ -215,11 +203,7 @@ async function copyInstalledNodeModulesEntry({
 }: {
   sourceEntry: string;
   targetEntry: string;
-  copyProjectFiles(
-    sourceFolder: string,
-    appFolder: string,
-    sourcePackage: PackageJson
-  ): Promise<void>;
+  copyProjectFiles(input: ProjectFilesCopyInput): Promise<void>;
 }) {
   if (!(await fs.pathExists(sourceEntry))) return;
 
@@ -242,7 +226,11 @@ async function copyInstalledNodeModulesEntry({
       )) as PackageJson;
 
       await fs.ensureDir(targetEntry);
-      await copyProjectFiles(resolvedEntry, targetEntry, resolvedPackage);
+      await copyProjectFiles({
+        sourceFolder: resolvedEntry,
+        appFolder: targetEntry,
+        sourcePackage: resolvedPackage
+      });
       await copyResolvedNodeModules({
         sourcePackageFolder: resolvedEntry,
         targetPackageFolder: targetEntry,

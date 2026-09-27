@@ -13,76 +13,72 @@ jobs:
         include:
           - os: ubuntu-latest
             label: linux-x64
-            testOutputPath: out/npm2exe
-            releaseAssetPath: out/npm2exe-linux-x64
+            outputExtension: ''
           - os: macos-latest
             label: macos
-            testOutputPath: out/npm2exe
-            releaseAssetPath: out/npm2exe-macos
+            outputExtension: ''
           - os: windows-latest
             label: windows-x64
-            testOutputPath: out/npm2exe.exe
-            releaseAssetPath: out/npm2exe-windows-x64.exe
+            outputExtension: '.exe'
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
-      - name: Test
-        run: npm t
+      - run: npm test
 
-      - name: Prepare release asset
-        run: node -e "require('node:fs').copyFileSync(process.argv[1], process.argv[2])" "${{ matrix.testOutputPath }}" "${{ matrix.releaseAssetPath }}"
+      - id: packageName
+        run: node -e "const fs=require('node:fs'); const packageName=JSON.parse(fs.readFileSync('package.json','utf8')).name.replace(/^@/,'').replace(/\\//g,'-'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'value=' + packageName + '\\n');"
+
+      - run: cp "out/${{ steps.packageName.outputs.value }}${{ matrix.outputExtension }}" "out/${{ steps.packageName.outputs.value }}-${{ matrix.label }}${{ matrix.outputExtension }}"
 
       - name: Upload build artifact
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.label }}
-          path: ${{ matrix.releaseAssetPath }}
+          path: out/${{ steps.packageName.outputs.value }}-${{ matrix.label }}${{ matrix.outputExtension }}
           if-no-files-found: error
 
       - name: Publish GitHub release asset
-        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.releaseAssetPath }}
+          files: out/${{ steps.packageName.outputs.value }}-${{ matrix.label }}${{ matrix.outputExtension }}
           generate_release_notes: true
 
   Publish-NPM:
-    if: ${{ startsWith(github.ref, 'refs/tags/') && secrets.NPM_TOKEN != '' }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.NPM_TOKEN != '' }}
     needs: Test-and-Package
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 12
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
       - name: Publish package
         run: pnpm publish --access public --provenance --no-git-checks

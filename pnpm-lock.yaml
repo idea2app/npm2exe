@@ -175,9 +175,9 @@ importers:
       fast-glob:
         specifier: ^3.3.3
         version: 3.3.3
-      ignore:
-        specifier: ^7.0.10
-        version: 7.0.10
+      gitignore-to-glob:
+        specifier: ^0.3.0
+        version: 0.3.0
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -838,6 +838,10 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
+  gitignore-to-glob@0.3.0:
+    resolution: {integrity: sha512-mk74BdnK7lIwDHnotHddx1wsjMOFIThpLY3cPNniJ/2fA/tlLzHnFxIdR+4sLOu5KGgQJdij4kjJ2RoUNnCNMA==}
+    engines: {node: '>=4.4 <5 || >=6.9'}
+
   glob-parent@5.1.2:
     resolution: {integrity: sha512-AOIgSQCepiJYwP3ARnGx+5VnTu2HBYdzbGP45eLw1vr3zB3vZLeyed1sC9hnbcOc9/SrMyM5RPQrkGz4aS9Zow==}
     engines: {node: '>= 6'}
@@ -856,10 +860,6 @@ packages:
 
   ieee754@1.2.1:
     resolution: {integrity: sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA==}
-
-  ignore@7.0.10:
-    resolution: {integrity: sha512-HpbUakT7xp5miBUywCHf36ZEuAJNklBJDDsGpUIjMzOSmM8ELSfA9Sa/QDPeNeqeoN31u+UTCkL4klCOVvRm4Q==}
-    engines: {node: '>= 4'}
 
   is-core-module@2.17.0:
     resolution: {integrity: sha512-J/vG0zBCbIKOQFfufSwyXdMrsohyJIUNkrnmo6WZGzoM7tr/lsbfW5b2BvisL6zsyMzK9UxV9L6c7AoFbyXHOA==}
@@ -1502,6 +1502,8 @@ snapshots:
 
   function-bind@1.1.2: {}
 
+  gitignore-to-glob@0.3.0: {}
+
   glob-parent@5.1.2:
     dependencies:
       is-glob: 4.0.3
@@ -1515,8 +1517,6 @@ snapshots:
   husky@9.1.7: {}
 
   ieee754@1.2.1: {}
-
-  ignore@7.0.10: {}
 
   is-core-module@2.17.0:
     dependencies:

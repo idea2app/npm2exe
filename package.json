@@ -30,7 +30,7 @@
     "7zip-bin-full": "^26.3.1",
     "commander-jsx": "^0.8.0",
     "fast-glob": "^3.3.3",
-    "ignore": "^7.0.10",
+    "gitignore-to-glob": "^0.3.0",
     "semver": "^7.8.5",
     "zx": "^8.8.5"
   },

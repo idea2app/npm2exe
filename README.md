@@ -47,7 +47,7 @@ In short: **SEA / pkg / nexe** lean toward a tighter single-binary image, while 
 ```shell
 cd path/to/your/project
 
-npx git-utility download https://github.com/idea2app/npm2exe main .github/workflows/
+npx git-utility download https://github.com/idea2app/npm2exe main .github/workflows/ .github/workflows/
 ```
 
 Notes:
