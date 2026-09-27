@@ -64,6 +64,7 @@ interface PackProjectInput {
   arch?: string;
   nodeVersion?: string;
   outputName?: string;
+  compressionLevel?: number;
 }
 
 export async function packProject({
@@ -71,8 +72,16 @@ export async function packProject({
   targetPlatform = process.platform,
   arch = process.arch,
   nodeVersion,
-  outputName
+  outputName,
+  compressionLevel = 0
 }: PackProjectInput = {}) {
+  if (
+    !Number.isInteger(compressionLevel) ||
+    compressionLevel < 0 ||
+    compressionLevel > 9
+  )
+    throw new Error('Compression level must be an integer from 0 to 9');
+
   const sourceFolder = path.resolve(projectFolder);
   const sourcePackage = (await fs.readJSON(
     path.join(sourceFolder, 'package.json')
@@ -81,9 +90,14 @@ export async function packProject({
 
   if (!packageName) throw new Error('package.json name is required');
 
+  const packageBaseName = packageName.replace(/\//g, '__');
   const platform = normalizePlatform(targetPlatform);
   const runtimeArch = normalizeArch(arch, platform);
-  const tempRoot = path.join(sourceFolder, '.temp/npm2exe-apps', packageName);
+  const tempRoot = path.join(
+    sourceFolder,
+    '.temp/npm2exe-apps',
+    packageBaseName
+  );
   const appFolder = path.join(tempRoot, 'app');
   const runtimeFolder = path.join(tempRoot, 'runtime');
   const outputFolder = path.join(sourceFolder, 'out');
@@ -124,19 +138,28 @@ export async function packProject({
   });
   if (platform !== 'win') await createInstallScript(tempRoot);
 
-  const outputBaseName = outputName || packageName;
+  const outputBaseName = outputName || packageBaseName;
   const outputFile = path.join(
     outputFolder,
     platform === 'win' ? `${outputBaseName}.exe` : outputBaseName
   );
 
   if (platform === 'win') {
-    await packageWith7Zip(path.join(sourceFolder, '.temp'), outputFile);
+    await packageWith7Zip(
+      path.join(sourceFolder, '.temp'),
+      outputFile,
+      compressionLevel
+    );
   } else {
     const archiveRoot = path.join(sourceFolder, '.temp');
     const installScript = `./${toPosixPath(path.relative(archiveRoot, path.join(tempRoot, 'install.sh')))}`;
 
-    await packageWithMakeself(archiveRoot, outputFile, installScript);
+    await packageWithMakeself(
+      archiveRoot,
+      outputFile,
+      installScript,
+      compressionLevel
+    );
   }
   return { outputFile, packageName, tempRoot, runtimeVersion: version };
 }
@@ -443,7 +466,8 @@ async function installMakeself() {
 async function packageWithMakeself(
   tempRoot: string,
   outputFile: string,
-  installScript: string
+  installScript: string,
+  compressionLevel = 0
 ) {
   const makeselfFolder = path.join(os.tmpdir(), 'npm2exe-makeself');
   const makeselfPath = path.join(makeselfFolder, 'makeself.sh');
@@ -455,7 +479,10 @@ async function packageWithMakeself(
   )
     await installMakeself();
 
-  return $`${makeselfPath} --nocomp --target '$HOME' ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+  const compressOptions = compressionLevel
+    ? `--gzip --complevel ${compressionLevel}`
+    : '--nocomp';
+  return $`${makeselfPath} ${compressOptions} --target '$HOME' ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
 }
 
 async function installSFXModule() {
@@ -475,7 +502,11 @@ async function installSFXModule() {
   return sfxPath;
 }
 
-async function packageWith7Zip(tempRoot: string, outputFile: string) {
+async function packageWith7Zip(
+  tempRoot: string,
+  outputFile: string,
+  compressionLevel = 0
+) {
   const { path7z } = await import('7zip-bin-full');
   const sfxPath = await installSFXModule();
   const archivePath = path.join(os.tmpdir(), 'npm2exe-archive.7z');
@@ -491,7 +522,9 @@ exit /b 0
 `.replace(/\n/g, '\r\n')
   );
   await fs.remove(archivePath);
-  await $({ cwd: tempRoot })`${path7z} a -t7z -mx=9 ${archivePath} .`;
+  await $({
+    cwd: tempRoot
+  })`${path7z} a -t7z -mx=${compressionLevel} ${archivePath} .`;
 
   const config = `;!@Install@!UTF-8!
 Title="${path.basename(outputFile, '.exe')}"

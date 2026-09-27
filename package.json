@@ -1,6 +1,6 @@
 {
   "name": "npm2exe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "LGPL-2.1-or-later",
   "author": "shiy2008@gmail.com",
   "description": "Pack a JavaScript local project to a Portable Executable",

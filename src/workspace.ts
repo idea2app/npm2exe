@@ -48,7 +48,8 @@ export async function stageWorkspacePackage({
     path.join(workspaceRoot, 'package.json')
   )) as PackageJson;
   const workspacePackageName =
-    workspacePackage.name?.trim() || path.basename(workspaceRoot);
+    workspacePackage.name?.trim().replace(/\//g, '__') ||
+    path.basename(workspaceRoot);
   const workspaceTempFolder = path.join(
     sourceFolder,
     '.temp',
