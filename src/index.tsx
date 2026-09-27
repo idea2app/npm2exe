@@ -29,6 +29,10 @@ Command.execute(
       output: {
         parameters: '<name>',
         description: 'Output file base name'
+      },
+      'compression-level': {
+        parameters: '<0-9>',
+        description: 'Compression level: 0 disables compression (default)'
       }
     }}
     executor={async (options, projectFolder = '.') => {
@@ -39,7 +43,11 @@ Command.execute(
         arch: options.arch?.toString(),
         targetPlatform: options.platform?.toString(),
         nodeVersion: options['node-version']?.toString(),
-        outputName: options.output?.toString()
+        outputName: options.output?.toString(),
+        compressionLevel:
+          options['compression-level'] != null
+            ? Number(options['compression-level'])
+            : undefined
       });
     }}
   />,

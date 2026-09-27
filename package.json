@@ -1,6 +1,6 @@
 {
   "name": "npm2exe",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "LGPL-2.1-or-later",
   "author": "shiy2008@gmail.com",
   "description": "Pack a JavaScript local project to a Portable Executable",
@@ -30,18 +30,20 @@
     "7zip-bin-full": "^26.3.1",
     "commander-jsx": "^0.8.0",
     "fast-glob": "^3.3.3",
+    "gitignore-to-glob": "^0.3.0",
     "semver": "^7.8.5",
     "zx": "^8.8.5"
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.3",
     "@types/semver": "^7.8.0",
     "husky": "^9.1.7",
-    "lint-staged": "^17.5.1",
+    "lint-staged": "^17.6.0",
     "pkgroll": "^2.28.1",
     "prettier": "^3.9.9",
     "tsx": "^4.23.15",
+    "type-fest": "^5.10.0",
     "typescript": "^7.0.2"
   },
   "prettier": {
@@ -56,8 +58,8 @@
     "prepare": "husky",
     "lint": "lint-staged",
     "build": "pkgroll",
-    "test": "npm run build  &&  tsx src/ .  &&  out/npm2exe  &&  ~/npm2exe -h",
-    "test-win": "npm run build  &&  tsx src/ .  &&  out\\npm2exe.exe -y  &&  %USERPROFILE%\\npm2exe -h",
-    "prepublishOnly": "npm test"
+    "test": "npm run build  &&  tsx src/ .  &&  out/npm2exe  &&  ~/npm2exe -h  &&  pnpm --dir test-packages --filter test-child test",
+    "test-win": "npm run build  &&  tsx src/ .  &&  out\\npm2exe.exe -y  &&  %USERPROFILE%\\npm2exe -h  &&  pnpm --dir test-packages --filter test-child test",
+    "prepublishOnly": "npm run build"
   }
 }

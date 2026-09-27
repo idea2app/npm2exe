@@ -1,14 +1,29 @@
 name: CI & CD
+
 on:
   push:
-    tags:
-      - v*
+
 jobs:
-  Build-and-Publish:
-    runs-on: ubuntu-latest
+  Test-and-Package:
+    name: Test & Package ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    env:
+      ASSET_PATH: ""
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x64
+            outputExtension: ""
+          - os: macos-latest
+            label: macos
+            outputExtension: ""
+          - os: windows-latest
+            label: windows-x64
+            outputExtension: ".exe"
     permissions:
       contents: write
-      id-token: write
     steps:
       - uses: actions/checkout@v7
 
@@ -20,10 +35,73 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
           cache: pnpm
-      - name: Install Dependencies
-        run: pnpm i --frozen-lockfile
 
-      - name: Build & Publish
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: pnpm install --frozen-lockfile
+
+      - name: Test
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: npm test
+
+      - name: Test on Windows
+        if: ${{ matrix.os == 'windows-latest' }}
+        run: npm run test-win
+
+      - name: Read package metadata
+        shell: pwsh
+        run: |
+          $packageName = jq -r '(.name | ltrimstr("@") | gsub("/"; "-"))' package.json
+          $packageFile = "out/$packageName${{ matrix.outputExtension }}"
+          $assetPath = "out/$packageName-${{ matrix.label }}${{ matrix.outputExtension }}"
+          "PACKAGE_FILE=$packageFile" >> $env:GITHUB_ENV
+          "ASSET_PATH=$assetPath" >> $env:GITHUB_ENV
+
+      - name: Rename release asset
+        shell: pwsh
+        run: cp "$env:PACKAGE_FILE" "$env:ASSET_PATH"
+
+      - name: Upload build artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.label }}
+          path: ${{ env.ASSET_PATH }}
+          if-no-files-found: error
+
+      - name: Publish GitHub release asset
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ env.ASSET_PATH }}
+          generate_release_notes: true
+
+  Publish-NPM:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: Test-and-Package
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - if: ${{ env.NODE_AUTH_TOKEN != '' }}
+        uses: actions/checkout@v7
+
+      - if: ${{ env.NODE_AUTH_TOKEN != '' }}
+        uses: pnpm/action-setup@v6
+        with:
+          version: 12
+
+      - if: ${{ env.NODE_AUTH_TOKEN != '' }}
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - if: ${{ env.NODE_AUTH_TOKEN != '' }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish package
+        if: ${{ env.NODE_AUTH_TOKEN != '' }}
+        run: pnpm publish --access public --provenance --no-git-checks
