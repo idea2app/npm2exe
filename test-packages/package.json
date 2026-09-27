@@ -1,0 +1,7 @@
+{
+  "name": "npm2exe-test-packages",
+  "private": true,
+  "devDependencies": {
+    "test-parent": "workspace:*"
+  }
+}

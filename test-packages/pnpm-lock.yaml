@@ -1,0 +1,21 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: false
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    devDependencies:
+      test-parent:
+        specifier: workspace:*
+        version: link:parent
+
+  child:
+    dependencies:
+      test-parent:
+        specifier: workspace:*
+        version: link:../parent
+
+  parent: {}

@@ -1,12 +1,13 @@
 {
-  "name": "test-mono",
+  "name": "test-child",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "bin": "./index.js",
   "dependencies": {
-    "npm2exe": "workspace:*"
+    "test-parent": "workspace:*"
   },
   "scripts": {
-    "test": "npm2exe .  &&  out/test-mono  &&  ~/test-mono"
+    "test": "node test.js"
   }
 }

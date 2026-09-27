@@ -58,7 +58,7 @@
     "prepare": "husky",
     "lint": "lint-staged",
     "build": "pkgroll",
-    "test": "npm run build  &&  tsx src/ .  &&  out/npm2exe  &&  ~/npm2exe -h  &&  pnpm --filter test-mono test",
+    "test": "npm run build  &&  tsx src/ .  &&  out/npm2exe  &&  ~/npm2exe -h  &&  pnpm --dir test-packages --filter test-child test",
     "test-win": "npm run build  &&  tsx src/ .  &&  out\\npm2exe.exe -y  &&  %USERPROFILE%\\npm2exe -h",
     "prepublishOnly": "npm run build"
   }

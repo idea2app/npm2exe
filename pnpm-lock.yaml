@@ -216,12 +216,6 @@ importers:
         specifier: ^7.0.2
         version: 7.0.2
 
-  test-mono:
-    dependencies:
-      npm2exe:
-        specifier: workspace:*
-        version: link:..
-
 packages:
 
   7zip-bin-full@26.3.1:
