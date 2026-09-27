@@ -82,7 +82,7 @@ export async function stageWorkspacePackage({
 const hasWorkspaceProtocolDependency = (packageJson: PackageJson) =>
   DEPENDENCY_FIELDS.some(field =>
     Object.values(packageJson[field] || {}).some(version =>
-      version.startsWith(WORKSPACE_PROTOCOL)
+      version?.startsWith(WORKSPACE_PROTOCOL)
     )
   );
 
@@ -104,7 +104,8 @@ async function findWorkspaceRoot(sourceFolder: string) {
     }
 
     const parent = path.dirname(current);
-    if (parent === current) return null;
+
+    if (parent === current) return;
 
     current = parent;
   }
@@ -124,12 +125,8 @@ async function copyWorkspaceFiles(sourceFolder: string, targetFolder: string) {
     const stats = await fs.lstat(from);
     const to = path.join(targetFolder, relativePath);
 
-    if (stats.isDirectory()) {
-      await fs.ensureDir(to);
-      continue;
-    }
-
-    await fs.copy(from, to);
+    if (stats.isDirectory()) await fs.ensureDir(to);
+    else await fs.copy(from, to);
   }
 }
 
@@ -168,11 +165,11 @@ async function copyResolvedNodeModules({
   const sourcePackage = (await fs.readJSON(
     path.join(sourcePackageFolder, 'package.json')
   )) as PackageJson;
+
   const targetNodeModulesFolder = path.join(
     targetPackageFolder,
     'node_modules'
   );
-
   await fs.ensureDir(targetNodeModulesFolder);
 
   const sourceBinaryFolder = path.join(sourceNodeModulesFolder, '.bin');
@@ -180,9 +177,7 @@ async function copyResolvedNodeModules({
     await fs.copy(
       sourceBinaryFolder,
       path.join(targetNodeModulesFolder, '.bin'),
-      {
-        dereference: true
-      }
+      { dereference: true }
     );
 
   for (const dependencyName of getRuntimeDependencyNames(sourcePackage)) {
@@ -215,10 +210,8 @@ async function copyInstalledNodeModulesEntry({
     if (
       sourceEntry.includes(`${path.sep}.bin${path.sep}`) ||
       path.basename(path.dirname(sourceEntry)) === '.bin'
-    ) {
-      await fs.copy(sourceEntry, targetEntry, { dereference: true });
-      return;
-    }
+    )
+      return fs.copy(sourceEntry, targetEntry, { dereference: true });
 
     if (await fs.pathExists(path.join(resolvedEntry, 'package.json'))) {
       const resolvedPackage = (await fs.readJSON(
@@ -231,25 +224,19 @@ async function copyInstalledNodeModulesEntry({
         appFolder: targetEntry,
         sourcePackage: resolvedPackage
       });
-      await copyResolvedNodeModules({
+      return copyResolvedNodeModules({
         sourcePackageFolder: resolvedEntry,
         targetPackageFolder: targetEntry,
         copyProjectFiles
       });
-      return;
     }
-
-    await fs.copy(sourceEntry, targetEntry, { dereference: true });
-    return;
+    return fs.copy(sourceEntry, targetEntry, { dereference: true });
   }
 
-  if (!sourceStats.isDirectory()) {
-    await fs.copy(sourceEntry, targetEntry);
-    return;
-  }
+  if (!sourceStats.isDirectory()) return fs.copy(sourceEntry, targetEntry);
 
   await fs.ensureDir(targetEntry);
-  await fs.copy(sourceEntry, targetEntry);
+  return fs.copy(sourceEntry, targetEntry);
 }
 
 const getRuntimeDependencyNames = (packageJson: PackageJson) =>

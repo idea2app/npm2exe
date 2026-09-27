@@ -255,24 +255,19 @@ async function commandExists(command: string): Promise<boolean> {
   }
 }
 
-async function resolveRunner(name: string) {
-  if (await commandExists(name)) return { command: name, args: [] as string[] };
+const resolveRunner = async (name: string) =>
+  (await commandExists(name))
+    ? { command: name, args: [] as string[] }
+    : (name === 'pnpm' || name === 'yarn') && (await commandExists('corepack'))
+      ? { command: 'corepack', args: [name] }
+      : null;
 
-  if ((name === 'pnpm' || name === 'yarn') && (await commandExists('corepack')))
-    return { command: 'corepack', args: [name] };
-
-  return null;
-}
-
-const runCommand = async (
+const runCommand = (
   runner: { command: string; args: string[] },
   args: readonly string[],
   cwd: string
 ) =>
-  $({
-    cwd,
-    stdio: 'inherit'
-  })`${runner.command} ${[...runner.args, ...args]}`;
+  $({ cwd, stdio: 'inherit' })`${runner.command} ${[...runner.args, ...args]}`;
 
 async function installNodeRuntime({
   version,
@@ -329,7 +324,7 @@ async function downloadFile(url: string, target: string) {
   await fs.outputFile(target, content);
 }
 
-async function extractArchive({
+const extractArchive = async ({
   extension,
   archivePath,
   runtimeFolder,
@@ -339,18 +334,14 @@ async function extractArchive({
   archivePath: string;
   runtimeFolder: string;
   platform: TargetPlatform;
-}) {
-  if (getExtractionCommand(extension) === 'tar')
-    return $`tar -xf ${archivePath} -C ${runtimeFolder}`;
-
-  if (platform === 'win' && (await commandExists('powershell')))
-    return $`powershell -NoProfile -Command Expand-Archive -Path ${archivePath} -DestinationPath ${runtimeFolder} -Force`;
-
-  if (await commandExists('python'))
-    return $`python -m zipfile -e ${archivePath} ${runtimeFolder}`;
-
-  await $`unzip -q -o ${archivePath} -d ${runtimeFolder}`;
-}
+}) =>
+  getExtractionCommand(extension) === 'tar'
+    ? $`tar -xf ${archivePath} -C ${runtimeFolder}`
+    : platform === 'win' && (await commandExists('powershell'))
+      ? $`powershell -NoProfile -Command Expand-Archive -Path ${archivePath} -DestinationPath ${runtimeFolder} -Force`
+      : (await commandExists('python'))
+        ? $`python -m zipfile -e ${archivePath} ${runtimeFolder}`
+        : $`unzip -q -o ${archivePath} -d ${runtimeFolder}`;
 
 async function createLaunchers({
   tempRoot,
@@ -383,7 +374,7 @@ async function createLaunchers({
   for (const [name, target] of entries) {
     const targetRelativePath = path.relative(
       archiveRoot,
-      path.join(tempRoot, 'app', target)
+      path.join(tempRoot, 'app', target!)
     );
 
     if (platform === 'win') {
@@ -464,7 +455,7 @@ async function packageWithMakeself(
   )
     await installMakeself();
 
-  await $`${makeselfPath} --nocomp --target '$HOME' ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+  return $`${makeselfPath} --nocomp --target '$HOME' ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
 }
 
 async function installSFXModule() {
@@ -500,9 +491,7 @@ exit /b 0
 `.replace(/\n/g, '\r\n')
   );
   await fs.remove(archivePath);
-  await $({
-    cwd: tempRoot
-  })`${path7z} a -t7z -mx=9 ${archivePath} .`;
+  await $({ cwd: tempRoot })`${path7z} a -t7z -mx=9 ${archivePath} .`;
 
   const config = `;!@Install@!UTF-8!
 Title="${path.basename(outputFile, '.exe')}"
