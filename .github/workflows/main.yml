@@ -38,10 +38,14 @@ jobs:
 
       - run: npm test
 
-      - id: packageName
-        run: node -e "const fs=require('node:fs'); const packageName=JSON.parse(fs.readFileSync('package.json','utf8')).name.replace(/^@/,'').replace(/\\//g,'-'); fs.appendFileSync(process.env.GITHUB_OUTPUT, 'value=' + packageName + '\\n');"
+      - name: Read package name
+        id: packageName
+        shell: pwsh
+        run: jq -r '"value=" + (.name | ltrimstr("@") | gsub("/"; "-"))' package.json | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
-      - run: cp "out/${{ steps.packageName.outputs.value }}${{ matrix.outputExtension }}" "out/${{ steps.packageName.outputs.value }}-${{ matrix.label }}${{ matrix.outputExtension }}"
+      - name: Rename release asset
+        shell: pwsh
+        run: cp "out/${{ steps.packageName.outputs.value }}${{ matrix.outputExtension }}" "out/${{ steps.packageName.outputs.value }}-${{ matrix.label }}${{ matrix.outputExtension }}"
 
       - name: Upload build artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}

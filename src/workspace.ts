@@ -4,7 +4,7 @@ import fg from 'fast-glob';
 import gitignoreToGlob from 'gitignore-to-glob';
 import type { PackageJson } from 'type-fest';
 
-interface ProjectFilesCopyInput {
+export interface ProjectFilesCopyInput {
   sourceFolder: string;
   appFolder: string;
   sourcePackage: PackageJson;

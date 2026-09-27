@@ -16,6 +16,7 @@ import {
   toWindowsPath
 } from './utility.js';
 import { stageWorkspacePackage } from './workspace.js';
+import type { ProjectFilesCopyInput } from './workspace.js';
 
 if (process.platform === 'win32')
   if (typeof $.shell === 'string')
@@ -174,11 +175,7 @@ async function copyProjectFiles({
   sourceFolder,
   appFolder,
   sourcePackage
-}: {
-  sourceFolder: string;
-  appFolder: string;
-  sourcePackage: PackageJson;
-}) {
+}: ProjectFilesCopyInput) {
   const entries = new Set(['package.json', '.npmrc', 'pnpm-workspace.yaml']);
 
   for (const lockFile of LOCK_FILES)
