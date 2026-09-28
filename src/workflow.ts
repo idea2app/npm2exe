@@ -186,15 +186,15 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       this.context.outputFolder,
       this.context.platform === 'win' ? `${outputBaseName}.exe` : outputBaseName
     );
+    const archiveRoot = path.resolve(this.context.tempRoot, '../..');
 
     if (this.context.platform === 'win') {
       await this.platformPackager.packageWith7Zip({
-        tempRoot: path.join(this.context.sourceFolder, '.temp'),
+        tempRoot: archiveRoot,
         outputFile,
         compressionLevel: this.context.compressionLevel
       });
     } else {
-      const archiveRoot = path.join(this.context.sourceFolder, '.temp');
       const installScript = `./${toPosixPath(
         path.relative(
           archiveRoot,

@@ -37,7 +37,7 @@ export class DownloadService {
   async downloadFile(url: string, targetPath: string, label = url) {
     const { response, download } = request<ArrayBuffer>({
       method: 'GET',
-      path: url,
+      path: new URL(url),
       responseType: 'arraybuffer'
     });
     const ink =
