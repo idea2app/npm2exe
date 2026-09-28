@@ -25,6 +25,7 @@ Options:
 - `--node-version <version>` specific runtime version (for example `v22.18.0`)
 - `--output <name>` output bundle file name (default package name; Windows appends `.exe`)
 - `--compression-level <0-9>` compression level (default `0`, no compression; higher levels trade speed for a smaller archive)
+- `--verbose` or `-V` enable Verbose output
 
 `npm2exe` reads your `package.json#bin`, installs only production dependencies into a temporary app directory, downloads a matching stock Node.js runtime, then wraps both into a self-extracting package.[9][10]
 

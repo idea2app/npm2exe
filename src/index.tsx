@@ -3,12 +3,21 @@
 
 import path from 'node:path';
 import { Command } from 'commander-jsx';
+import { $, usePowerShell } from 'zx';
 import {
   name,
   version,
   description
 } from '../package.json' with { type: 'json' };
 import { packProject } from './workflow.js';
+
+if (process.platform === 'win32')
+  if (typeof $.shell === 'string')
+    $.quote = arg => `'${arg.replace(/'/g, `'\\''`)}'`;
+  else {
+    usePowerShell();
+    $.prefix = '& ';
+  }
 
 Command.execute(
   <Command
@@ -34,9 +43,15 @@ Command.execute(
       'compression-level': {
         parameters: '<0-9>',
         description: 'Compression level: 0 disables compression (default)'
+      },
+      verbose: {
+        shortcut: 'V',
+        description: 'enable Verbose output'
       }
     }}
     executor={async (options, projectFolder = '.') => {
+      if (options.verbose) $.verbose = true;
+
       const project = projectFolder?.toString() || '.';
 
       await packProject({

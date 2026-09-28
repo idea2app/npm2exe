@@ -1,5 +1,6 @@
 import type { FC } from 'react';
 import { Box, Text, render } from 'ink';
+
 import { formatBytes } from './utility.js';
 
 const PROGRESS_BAR_WIDTH = 24;
@@ -14,7 +15,7 @@ interface ProgressViewProps {
 }
 
 const formatProgressValue = (value: number, unit: ProgressUnit) =>
-  unit === 'bytes' ? formatBytes(value) : `${value}`;
+  unit === 'bytes' ? formatBytes(value) : value + '';
 
 const ProgressView: FC<ProgressViewProps> = ({
   label,
@@ -49,21 +50,16 @@ export class ProgressRenderer {
     private readonly label: string,
     private readonly unit: ProgressUnit = 'bytes'
   ) {
+    const { stderr } = process,
+      { loaded, total } = this;
+
     this.inkApplication =
-      process.stderr.isTTY && !process.env.CI
-        ? render(
-            <ProgressView
-              label={label}
-              loaded={this.loaded}
-              total={this.total}
-              unit={unit}
-            />,
-            {
-              stdout: process.stderr,
-              stderr: process.stderr,
-              patchConsole: false
-            }
-          )
+      stderr.isTTY && !process.env.CI
+        ? render(<ProgressView {...{ label, loaded, total, unit }} />, {
+            stdout: stderr,
+            stderr,
+            patchConsole: false
+          })
         : null;
   }
 
@@ -79,13 +75,10 @@ export class ProgressRenderer {
   }
 
   private rerender() {
+    const { label, loaded, total, unit } = this;
+
     this.inkApplication?.rerender(
-      <ProgressView
-        label={this.label}
-        loaded={this.loaded}
-        total={this.total}
-        unit={this.unit}
-      />
+      <ProgressView {...{ label, loaded, total, unit }} />
     );
   }
 }

@@ -2,19 +2,16 @@ import path from 'node:path';
 import { fs } from 'zx';
 import fg from 'fast-glob';
 import type { PackageJson } from 'type-fest';
-import {
-  normalizeArch,
-  normalizePlatform,
-  PlatformPackager,
-  resolveNodeVersion,
-  type TargetPlatform
-} from './platform.js';
+import { PlatformPackager } from './platform.js';
 import {
   LOCK_FILES,
   createIgnorePatterns,
   logStep,
+  normalizeArch,
+  normalizePlatform,
   toPosixPath,
-  toWindowsPath
+  toWindowsPath,
+  type TargetPlatform
 } from './utility.js';
 import { ProgressRenderer } from './progress.js';
 import { WorkspaceStager, type ProjectFilesCopyInput } from './workspace.js';
@@ -48,9 +45,7 @@ interface ProjectPackagerContext {
 class ProjectPackager {
   private readonly workspaceStager = new WorkspaceStager(
     input => this.copyProjectFiles(input),
-    async appFolder => {
-      await this.platformPackager.installProductionDependencies(appFolder);
-    }
+    appFolder => this.platformPackager.installProductionDependencies(appFolder)
   );
 
   constructor(
@@ -73,12 +68,7 @@ class ProjectPackager {
 
     const outputFile = await this.packageBundle();
 
-    return {
-      outputFile,
-      packageName,
-      tempRoot,
-      runtimeVersion
-    };
+    return { outputFile, packageName, tempRoot, runtimeVersion };
   }
 
   @logStep('stage application files')
@@ -92,17 +82,11 @@ class ProjectPackager {
     });
 
     if (!stagedWorkspacePackage) {
-      await this.copyProjectFiles({
-        sourceFolder,
-        appFolder,
-        sourcePackage
-      });
+      await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
+
       await this.platformPackager.installProductionDependencies(appFolder);
-      await this.copyProjectFiles({
-        sourceFolder,
-        appFolder,
-        sourcePackage
-      });
+
+      await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
     }
   }
 
@@ -110,7 +94,7 @@ class ProjectPackager {
   async installRuntime() {
     const { sourcePackage, nodeVersion, runtimeFolder, platform, runtimeArch } =
       this.context;
-    const version = await resolveNodeVersion({
+    const version = await this.platformPackager.resolveNodeVersion({
       sourcePackage,
       overrideVersion: nodeVersion
     });
@@ -134,7 +118,6 @@ class ProjectPackager {
       throw new Error(
         'Node runtime must be installed before creating launchers'
       );
-
     if (!sourcePackage.bin) throw new Error('package.json bin is required');
 
     const entries =
@@ -158,7 +141,7 @@ class ProjectPackager {
         path.join(tempRoot, 'app', target!)
       );
 
-      if (platform === 'win') {
+      if (platform === 'win')
         await fs.outputFile(
           path.join(archiveRoot, `${name}.cmd`),
           `@echo off
@@ -167,7 +150,6 @@ set "NODE_PATH=%~dp0${toWindowsPath(nodeModulesRelativePath)};%NODE_PATH%"
 "%~dp0${toWindowsPath(nodeRelativePath)}" "%~dp0${toWindowsPath(targetRelativePath)}" %*
 `.replace(/\n/g, '\r\n')
         );
-      }
 
       const nodeModulesPath = `$ROOT_DIR/${toPosixPath(nodeModulesRelativePath)}`;
       const nodePathValue =
@@ -208,13 +190,13 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     );
     const archiveRoot = path.resolve(tempRoot, '../..');
 
-    if (platform === 'win') {
+    if (platform === 'win')
       await this.platformPackager.packageWith7Zip({
         tempRoot: archiveRoot,
         outputFile,
         compressionLevel
       });
-    } else {
+    else {
       const installScript = `./${toPosixPath(
         path.relative(archiveRoot, path.join(tempRoot, 'install.sh'))
       )}`;
@@ -271,6 +253,7 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
 
         if (await fs.pathExists(sourcePath)) {
           await fs.copy(sourcePath, path.join(appFolder, relativePath));
+
           progressRenderer.update(++copied, entries.size);
         }
       }
@@ -317,7 +300,7 @@ export async function packProject({
 
   if (!packageName) throw new Error('package.json name is required');
 
-  const packageBaseName = packageName.replace(/\//g, '__');
+  const packageBaseName = packageName.replace(/\//g, '-');
   const platform = normalizePlatform(targetPlatform);
   const runtimeArch = normalizeArch(arch, platform);
   const tempRoot = path.join(
@@ -340,7 +323,5 @@ export async function packProject({
     runtimeFolder: path.join(tempRoot, 'runtime'),
     outputFolder: path.join(sourceFolder, 'out')
   };
-  const packager = new ProjectPackager(context);
-
-  return packager.pack();
+  return new ProjectPackager(context).pack();
 }

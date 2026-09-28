@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fs } from 'zx';
 import fg from 'fast-glob';
 import type { PackageJson } from 'type-fest';
+
 import { ProgressRenderer } from './progress.js';
 import { createIgnorePatterns, logStep } from './utility.js';
 
@@ -12,8 +13,8 @@ export interface ProjectFilesCopyInput {
 }
 
 interface WorkspaceStagerInput extends ProjectFilesCopyInput {
-  copyProjectFiles(input: ProjectFilesCopyInput): Promise<void>;
-  installProductionDependencies(appFolder: string): Promise<void>;
+  copyProjectFiles(input: ProjectFilesCopyInput): Promise<unknown>;
+  installProductionDependencies(appFolder: string): Promise<unknown>;
 }
 
 const WORKSPACE_PROTOCOL = 'workspace:';
@@ -56,7 +57,7 @@ export class WorkspaceStager {
       path.join(workspaceRoot, 'package.json')
     )) as PackageJson;
     const workspacePackageName =
-      workspacePackage.name?.trim().replace(/\//g, '__') ||
+      workspacePackage.name?.trim().replace(/\//g, '-') ||
       path.basename(workspaceRoot);
     const workspaceTempFolder = path.join(
       workspaceRoot,
@@ -87,13 +88,17 @@ export class WorkspaceStager {
     return true;
   }
 
-  private static hasWorkspaceProtocolDependency(packageJson: PackageJson) {
-    return DEPENDENCY_FIELDS.some(field =>
+  private static getRuntimeDependencyNames = (packageJson: PackageJson) =>
+    RUNTIME_DEPENDENCY_FIELDS.flatMap(field =>
+      Object.keys(packageJson[field] || {})
+    );
+
+  private static hasWorkspaceProtocolDependency = (packageJson: PackageJson) =>
+    DEPENDENCY_FIELDS.some(field =>
       Object.values(packageJson[field] || {}).some(version =>
         version?.startsWith(WORKSPACE_PROTOCOL)
       )
     );
-  }
 
   private async findWorkspaceRoot(sourceFolder: string) {
     let currentFolder = sourceFolder;
@@ -155,10 +160,17 @@ export class WorkspaceStager {
   private async copyResolvedNodeModules({
     sourcePackageFolder,
     targetPackageFolder
-  }: {
-    sourcePackageFolder: string;
-    targetPackageFolder: string;
-  }) {
+  }: Record<`${'source' | 'target'}PackageFolder`, string>) {
+    return this.copyResolvedNodeModulesRecursive({
+      sourcePackageFolder,
+      targetPackageFolder
+    });
+  }
+
+  private async copyResolvedNodeModulesRecursive({
+    sourcePackageFolder,
+    targetPackageFolder
+  }: Record<`${'source' | 'target'}PackageFolder`, string>) {
     const sourceNodeModulesFolder = path.join(
       sourcePackageFolder,
       'node_modules'
@@ -196,17 +208,16 @@ export class WorkspaceStager {
     try {
       for (const dependencyName of dependencyNames) {
         const dependencyPathParts = dependencyName.split('/');
+        const sourceEntry = path.join(
+          sourceNodeModulesFolder,
+          ...dependencyPathParts
+        );
+        const targetEntry = path.join(
+          targetNodeModulesFolder,
+          ...dependencyPathParts
+        );
+        await this.copyInstalledNodeModulesEntry({ sourceEntry, targetEntry });
 
-        await this.copyInstalledNodeModulesEntry({
-          sourceEntry: path.join(
-            sourceNodeModulesFolder,
-            ...dependencyPathParts
-          ),
-          targetEntry: path.join(
-            targetNodeModulesFolder,
-            ...dependencyPathParts
-          )
-        });
         progressRenderer.update(++copied, dependencyNames.length);
       }
     } finally {
@@ -217,10 +228,7 @@ export class WorkspaceStager {
   private async copyInstalledNodeModulesEntry({
     sourceEntry,
     targetEntry
-  }: {
-    sourceEntry: string;
-    targetEntry: string;
-  }) {
+  }: Record<`${'source' | 'target'}Entry`, string>) {
     if (!(await fs.pathExists(sourceEntry))) return;
 
     const sourceStats = await fs.lstat(sourceEntry);
@@ -246,7 +254,7 @@ export class WorkspaceStager {
           sourcePackage: resolvedPackage
         });
 
-        return this.copyResolvedNodeModules({
+        return this.copyResolvedNodeModulesRecursive({
           sourcePackageFolder: resolvedEntry,
           targetPackageFolder: targetEntry
         });
@@ -260,11 +268,5 @@ export class WorkspaceStager {
     await fs.ensureDir(targetEntry);
 
     return fs.copy(sourceEntry, targetEntry);
-  }
-
-  private static getRuntimeDependencyNames(packageJson: PackageJson) {
-    return RUNTIME_DEPENDENCY_FIELDS.flatMap(field =>
-      Object.keys(packageJson[field] || {})
-    );
   }
 }
