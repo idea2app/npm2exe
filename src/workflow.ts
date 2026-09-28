@@ -98,6 +98,11 @@ class ProjectPackager {
         sourcePackage
       });
       await this.platformPackager.installProductionDependencies(appFolder);
+      await this.copyProjectFiles({
+        sourceFolder,
+        appFolder,
+        sourcePackage
+      });
     }
   }
 
@@ -236,16 +241,21 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       Array.isArray(sourcePackage.files) && sourcePackage.files.length > 0
         ? sourcePackage.files
         : ['**/*'];
+    const ignorePatterns = await createIgnorePatterns(sourceFolder);
 
     for (const lockFile of LOCK_FILES)
       if (await fs.pathExists(path.join(sourceFolder, lockFile)))
         entries.add(lockFile);
 
+    for (const pattern of patterns)
+      if (await fs.pathExists(path.join(sourceFolder, pattern)))
+        entries.add(pattern);
+
     for (const item of await fg(patterns, {
       cwd: sourceFolder,
       dot: true,
       onlyFiles: false,
-      ignore: await createIgnorePatterns(sourceFolder)
+      ignore: ignorePatterns
     }))
       entries.add(item);
 
