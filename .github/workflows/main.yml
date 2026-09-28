@@ -23,7 +23,7 @@ jobs:
             label: windows-x64
             outputExtension: ".exe"
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -60,19 +60,51 @@ jobs:
         run: cp "$env:PACKAGE_FILE" "$env:ASSET_PATH"
 
       - name: Upload build artifact
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.label }}
           path: ${{ env.ASSET_PATH }}
           if-no-files-found: error
+          archive: false
 
-      - name: Publish GitHub release asset
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  Publish-Release:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs: Test-and-Package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: out
+          merge-multiple: true
+
+      - name: Find previous tag
+        id: previous
+        run: |
+          tag=$(git describe --tags --match 'v*' --abbrev=0 "$GITHUB_SHA^" 2>/dev/null || true)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Check existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:
-          files: ${{ env.ASSET_PATH }}
-          generate_release_notes: true
+          files: out/*
+          fail_on_unmatched_files: true
+          previous_tag: ${{ steps.previous.outputs.tag }}
+          generate_release_notes: ${{ steps.existing.outputs.exists != 'true' }}
 
   Publish-NPM:
     if: ${{ startsWith(github.ref, 'refs/tags/v') }}

@@ -1,47 +1,148 @@
 import path from 'node:path';
+import gitignoreToGlob from 'gitignore-to-glob';
+import { ByteSize } from 'web-utility';
+import { $, fs } from 'zx';
 
-export type TargetPlatform = 'linux' | 'darwin' | 'win';
+export const LOCK_FILES = [
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'package-lock.json',
+  'npm-shrinkwrap.json'
+];
 
-export const LOCK_FILES = ['pnpm-lock.yaml', 'yarn.lock', 'package-lock.json', 'npm-shrinkwrap.json'];
+export const INSTALLERS = [
+  {
+    name: 'pnpm',
+    attempts: [
+      [
+        'install',
+        '--prod',
+        '--frozen-lockfile',
+        '--package-import-method=copy',
+        '--node-linker=hoisted'
+      ],
+      [
+        'install',
+        '--prod',
+        '--package-import-method=copy',
+        '--node-linker=hoisted'
+      ]
+    ]
+  },
+  {
+    name: 'yarn',
+    attempts: [
+      ['install', '--production', '--frozen-lockfile'],
+      ['install', '--production']
+    ]
+  },
+  { name: 'npm', attempts: [['install', '--omit=dev']] }
+] as const;
 
-export const normalizePlatform = (platform: string): TargetPlatform => {
-  if (platform === 'win32' || platform === 'win') return 'win';
-  if (platform === 'darwin') return 'darwin';
-  if (platform === 'linux') return 'linux';
-  throw new Error(`Unsupported platform: ${platform}`);
-};
+export const normalizeVersion = (version: string): string =>
+  version.startsWith('v') ? version : `v${version}`;
 
-export const normalizeArch = (arch: string, platform: TargetPlatform): string => {
+export function normalizeArch(arch: string, platform: TargetPlatform) {
   if (arch === 'x64' || arch === 'arm64') return arch;
   if (arch === 'arm') return 'armv7l';
   if (arch === 'ia32' || arch === 'x86') {
-    if (platform !== 'win') throw new Error(`${arch} is only supported for Windows targets`);
+    if (platform !== 'win')
+      throw new Error(`${arch} is only supported for Windows targets`);
+
     return 'x86';
   }
+
   throw new Error(`Unsupported architecture: ${arch}`);
-};
+}
 
-export const normalizeVersion = (version: string): string => (version.startsWith('v') ? version : `v${version}`);
+export function normalizePlatform(platform: string): TargetPlatform {
+  if (platform === 'win32' || platform === 'win') return 'win';
+  if (platform === 'darwin') return 'darwin';
+  if (platform === 'linux') return 'linux';
 
-export const toPosixPath = (filePath: string): string => filePath.split(path.sep).join('/');
+  throw new Error(`Unsupported platform: ${platform}`);
+}
 
-export const toWindowsPath = (filePath: string): string => filePath.replaceAll('/', '\\');
+export const toPosixPath = (filePath: string): string =>
+  filePath.split(path.sep).join('/');
+
+export const toWindowsPath = (filePath: string): string =>
+  filePath.replaceAll('/', '\\');
 
 export const getExtractionCommand = (extension: string): 'zip' | 'tar' =>
   extension === 'zip' ? 'zip' : 'tar';
 
-export async function findLatestReleaseAsset(repository: string, pattern: RegExp) {
-  const response = await fetch(`https://api.github.com/repos/${repository}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github+json' }
-  });
-  if (!response.ok) throw new Error(`Failed to fetch ${repository} release: ${response.status}`);
+export const formatBytes = (size: number): string =>
+  !Number.isFinite(size) || size <= 0
+    ? '0 B'
+    : new ByteSize(size).toShortString(size < 1024 ? 0 : 1);
 
-  const release = (await response.json()) as {
-    assets?: Record<'name' | 'browser_download_url', string>[];
-  };
-  const asset = release.assets?.find(({ name }) => pattern.test(name));
+export const logStep =
+  (label: string) =>
+  <This, Args extends unknown[], Return>(
+    method: (this: This, ...args: Args) => Promise<Return>,
+    _context: ClassMethodDecoratorContext<
+      This,
+      (this: This, ...args: Args) => Promise<Return>
+    >
+  ) =>
+    async function (this: This, ...args: Args): Promise<Return> {
+      const title = `[npm2exe] ${label}`;
 
-  if (!asset) throw new Error(`No asset matching ${pattern} in ${repository} release`);
+      console.info(`\n${title}\n`);
+      console.time(title);
+      try {
+        return await method.apply(this, args);
+      } finally {
+        console.timeEnd(title);
+      }
+    };
 
-  return asset;
+export async function createIgnorePatterns(sourceFolder: string) {
+  const gitIgnorePath = path.join(sourceFolder, '.gitignore');
+  const baseIgnorePatterns = [
+    '.git/**',
+    '.temp/**',
+    'out/**',
+    'node_modules/**',
+    '**/.temp/**',
+    '**/out/**',
+    '**/node_modules/**'
+  ];
+
+  if (!(await fs.pathExists(gitIgnorePath))) return baseIgnorePatterns;
+
+  return [...baseIgnorePatterns, ...gitignoreToGlob(gitIgnorePath)];
 }
+
+export async function commandExists(command: string) {
+  try {
+    if (process.platform === 'win32') await $`where.exe ${command}`;
+    else await $`which ${command}`;
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export type TargetPlatform = 'linux' | 'darwin' | 'win';
+
+export const extractArchive = async ({
+  extension,
+  archivePath,
+  runtimeFolder,
+  platform
+}: {
+  extension: string;
+  archivePath: string;
+  runtimeFolder: string;
+  platform: TargetPlatform;
+}) =>
+  getExtractionCommand(extension) === 'tar'
+    ? $`tar -xf ${archivePath} -C ${runtimeFolder}`
+    : platform === 'win' && (await commandExists('powershell'))
+      ? $`powershell -NoProfile -Command Expand-Archive -Path ${archivePath} -DestinationPath ${runtimeFolder} -Force`
+      : (await commandExists('python'))
+        ? $`python -m zipfile -e ${archivePath} ${runtimeFolder}`
+        : $`unzip -q -o ${archivePath} -d ${runtimeFolder}`;
