@@ -2,6 +2,7 @@
   "compilerOptions": {
     "strict": true,
     "target": "ES2022",
+    "lib": ["ES2022", "ESNext.Decorators"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "esModuleInterop": true,

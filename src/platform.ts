@@ -186,8 +186,9 @@ export class PlatformPackager {
     const compressArgs = compressionLevel
       ? ['--gzip', '--complevel', String(compressionLevel)]
       : ['--nocomp'];
+    const targetDirectory = '$HOME';
 
-    return $`${makeselfPath} ${compressArgs} --target \$HOME ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+    return $`${makeselfPath} ${compressArgs} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
   }
 
   async packageWith7Zip({
