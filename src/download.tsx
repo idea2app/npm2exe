@@ -62,7 +62,10 @@ export class DownloadService {
         );
       }
 
-      const { body } = await response;
+      const { status, body } = await response;
+
+      if (status < 200 || status >= 300)
+        throw new Error(`Download failed: ${url} (${status})`);
 
       if (!(body instanceof ArrayBuffer))
         throw new Error(`Download failed: ${url}`);
