@@ -1,47 +1,63 @@
 import path from 'node:path';
 
-export type TargetPlatform = 'linux' | 'darwin' | 'win';
+export const LOCK_FILES = [
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'package-lock.json',
+  'npm-shrinkwrap.json'
+];
 
-export const LOCK_FILES = ['pnpm-lock.yaml', 'yarn.lock', 'package-lock.json', 'npm-shrinkwrap.json'];
+export const normalizeVersion = (version: string): string =>
+  version.startsWith('v') ? version : `v${version}`;
 
-export const normalizePlatform = (platform: string): TargetPlatform => {
-  if (platform === 'win32' || platform === 'win') return 'win';
-  if (platform === 'darwin') return 'darwin';
-  if (platform === 'linux') return 'linux';
-  throw new Error(`Unsupported platform: ${platform}`);
-};
+export const toPosixPath = (filePath: string): string =>
+  filePath.split(path.sep).join('/');
 
-export const normalizeArch = (arch: string, platform: TargetPlatform): string => {
-  if (arch === 'x64' || arch === 'arm64') return arch;
-  if (arch === 'arm') return 'armv7l';
-  if (arch === 'ia32' || arch === 'x86') {
-    if (platform !== 'win') throw new Error(`${arch} is only supported for Windows targets`);
-    return 'x86';
-  }
-  throw new Error(`Unsupported architecture: ${arch}`);
-};
-
-export const normalizeVersion = (version: string): string => (version.startsWith('v') ? version : `v${version}`);
-
-export const toPosixPath = (filePath: string): string => filePath.split(path.sep).join('/');
-
-export const toWindowsPath = (filePath: string): string => filePath.replaceAll('/', '\\');
+export const toWindowsPath = (filePath: string): string =>
+  filePath.replaceAll('/', '\\');
 
 export const getExtractionCommand = (extension: string): 'zip' | 'tar' =>
   extension === 'zip' ? 'zip' : 'tar';
 
-export async function findLatestReleaseAsset(repository: string, pattern: RegExp) {
-  const response = await fetch(`https://api.github.com/repos/${repository}/releases/latest`, {
-    headers: { Accept: 'application/vnd.github+json' }
-  });
-  if (!response.ok) throw new Error(`Failed to fetch ${repository} release: ${response.status}`);
+export const formatBytes = (size: number): string => {
+  if (!Number.isFinite(size) || size <= 0) return '0 B';
 
-  const release = (await response.json()) as {
-    assets?: Record<'name' | 'browser_download_url', string>[];
-  };
-  const asset = release.assets?.find(({ name }) => pattern.test(name));
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const exponent = Math.min(
+    Math.floor(Math.log(size) / Math.log(1024)),
+    units.length - 1
+  );
+  const value = size / 1024 ** exponent;
 
-  if (!asset) throw new Error(`No asset matching ${pattern} in ${repository} release`);
+  return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+};
 
-  return asset;
-}
+export const logStep =
+  (label: string) =>
+  <This, Args extends unknown[], Return>(
+    method: (this: This, ...args: Args) => Return,
+    context: ClassMethodDecoratorContext<
+      This,
+      (this: This, ...args: Args) => Return
+    >
+  ) =>
+    async function (this: This, ...args: Args): Promise<Awaited<Return>> {
+      const startedAt = performance.now();
+
+      console.info(`[npm2exe] start ${label}`);
+
+      try {
+        const result = await method.apply(this, args);
+        const elapsed = Math.round(performance.now() - startedAt);
+
+        console.info(`[npm2exe] end ${label} (${elapsed}ms)`);
+
+        return result as Awaited<Return>;
+      } catch (error) {
+        const elapsed = Math.round(performance.now() - startedAt);
+
+        console.error(`[npm2exe] end ${label} (${elapsed}ms)`);
+
+        throw error;
+      }
+    };

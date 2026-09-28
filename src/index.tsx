@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/** @jsxImportSource commander-jsx */
 
 import path from 'node:path';
 import { Command } from 'commander-jsx';

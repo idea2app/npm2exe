@@ -7,7 +7,7 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "commander-jsx",
+    "jsxImportSource": "react",
     "types": ["node"],
     "skipLibCheck": true,
     "rootDir": "src",
