@@ -1,9 +1,11 @@
-import { Box, Text, render } from 'ink';
 import { request } from 'koajax';
+import { createElement } from 'react';
 import { fs } from 'zx';
 import { formatBytes } from './utility.js';
 
 const PROGRESS_BAR_WIDTH = 24;
+
+type InkModule = Pick<typeof import('ink'), 'Box' | 'Text' | 'render'>;
 
 interface DownloadProgressViewProperties {
   label: string;
@@ -11,11 +13,10 @@ interface DownloadProgressViewProperties {
   total: number;
 }
 
-const DownloadProgressView = ({
-  label,
-  loaded,
-  total
-}: DownloadProgressViewProperties) => {
+const createDownloadProgressView = (
+  { Box, Text }: InkModule,
+  { label, loaded, total }: DownloadProgressViewProperties
+) => {
   const ratio = total > 0 ? Math.min(loaded / total, 1) : 0;
   const filledWidth = Math.round(ratio * PROGRESS_BAR_WIDTH);
   const progressBar = `${'█'.repeat(filledWidth)}${'░'.repeat(PROGRESS_BAR_WIDTH - filledWidth)}`;
@@ -24,13 +25,11 @@ const DownloadProgressView = ({
       ? `${Math.round(ratio * 100)}% ${formatBytes(loaded)}/${formatBytes(total)}`
       : formatBytes(loaded);
 
-  return (
-    <Box flexDirection="column">
-      <Text>{label}</Text>
-      <Text color="cyan">
-        [{progressBar}] {progressText}
-      </Text>
-    </Box>
+  return createElement(
+    Box,
+    { flexDirection: 'column' },
+    createElement(Text, null, label),
+    createElement(Text, { color: 'cyan' }, `[${progressBar}] ${progressText}`)
   );
 };
 
@@ -41,14 +40,18 @@ export class DownloadService {
       path: url,
       responseType: 'arraybuffer'
     });
-    const inkApplication =
-      process.stderr.isTTY && !process.env.CI
-        ? render(<DownloadProgressView label={label} loaded={0} total={0} />, {
+    const ink =
+      process.stderr.isTTY && !process.env.CI ? await import('ink') : null;
+    const inkApplication = ink
+      ? ink.render(
+          createDownloadProgressView(ink, { label, loaded: 0, total: 0 }),
+          {
             stdout: process.stderr,
             stderr: process.stderr,
             patchConsole: false
-          })
-        : null;
+          }
+        )
+      : null;
     let loaded = 0;
     let total = 0;
 
@@ -57,9 +60,10 @@ export class DownloadService {
         loaded = progress.loaded || loaded;
         total = progress.total || total;
 
-        inkApplication?.rerender(
-          <DownloadProgressView label={label} loaded={loaded} total={total} />
-        );
+        if (ink && inkApplication)
+          inkApplication.rerender(
+            createDownloadProgressView(ink, { label, loaded, total })
+          );
       }
 
       const { status, body } = await response;
@@ -72,13 +76,14 @@ export class DownloadService {
 
       await fs.outputFile(targetPath, Buffer.from(body));
 
-      inkApplication?.rerender(
-        <DownloadProgressView
-          label={label}
-          loaded={total || loaded}
-          total={total || loaded}
-        />
-      );
+      if (ink && inkApplication)
+        inkApplication.rerender(
+          createDownloadProgressView(ink, {
+            label,
+            loaded: total || loaded,
+            total: total || loaded
+          })
+        );
     } finally {
       inkApplication?.unmount();
     }

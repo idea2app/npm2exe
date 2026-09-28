@@ -183,12 +183,12 @@ export class PlatformPackager {
     )
       await this.installMakeself();
 
-    const compressArgs = compressionLevel
-      ? ['--gzip', '--complevel', String(compressionLevel)]
-      : ['--nocomp'];
     const targetDirectory = '$HOME';
 
-    return $`${makeselfPath} ${compressArgs} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+    if (compressionLevel)
+      return $`${makeselfPath} --gzip --complevel ${String(compressionLevel)} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+
+    return $`${makeselfPath} --nocomp --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
   }
 
   async packageWith7Zip({
