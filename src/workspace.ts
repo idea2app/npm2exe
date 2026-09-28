@@ -1,8 +1,8 @@
 import path from 'node:path';
 import { fs } from 'zx';
 import fg from 'fast-glob';
-import gitignoreToGlob from 'gitignore-to-glob';
 import type { PackageJson } from 'type-fest';
+import { createIgnorePatterns } from './utility.js';
 
 export interface ProjectFilesCopyInput {
   sourceFolder: string;
@@ -39,7 +39,8 @@ export class WorkspaceStager {
     sourcePackage,
     appFolder
   }: ProjectFilesCopyInput) {
-    if (!this.hasWorkspaceProtocolDependency(sourcePackage)) return false;
+    if (!WorkspaceStager.hasWorkspaceProtocolDependency(sourcePackage))
+      return false;
 
     const workspaceRoot = await this.findWorkspaceRoot(sourceFolder);
 
@@ -84,7 +85,7 @@ export class WorkspaceStager {
     return true;
   }
 
-  private hasWorkspaceProtocolDependency(packageJson: PackageJson) {
+  private static hasWorkspaceProtocolDependency(packageJson: PackageJson) {
     return DEPENDENCY_FIELDS.some(field =>
       Object.values(packageJson[field] || {}).some(version =>
         version?.startsWith(WORKSPACE_PROTOCOL)
@@ -123,7 +124,7 @@ export class WorkspaceStager {
       dot: true,
       onlyFiles: false,
       followSymbolicLinks: false,
-      ignore: await this.createIgnorePatterns(sourceFolder)
+      ignore: await createIgnorePatterns(sourceFolder)
     });
 
     for (const relativePath of relativePaths) {
@@ -134,23 +135,6 @@ export class WorkspaceStager {
       if (stats.isDirectory()) await fs.ensureDir(targetPath);
       else await fs.copy(sourcePath, targetPath);
     }
-  }
-
-  private async createIgnorePatterns(sourceFolder: string) {
-    const gitIgnorePath = path.join(sourceFolder, '.gitignore');
-    const baseIgnorePatterns = [
-      '.git/**',
-      '.temp/**',
-      'out/**',
-      'node_modules/**',
-      '**/.temp/**',
-      '**/out/**',
-      '**/node_modules/**'
-    ];
-
-    if (!(await fs.pathExists(gitIgnorePath))) return baseIgnorePatterns;
-
-    return [...baseIgnorePatterns, ...gitignoreToGlob(gitIgnorePath)];
   }
 
   private async copyResolvedNodeModules({
@@ -186,7 +170,7 @@ export class WorkspaceStager {
         { dereference: true }
       );
 
-    for (const dependencyName of this.getRuntimeDependencyNames(
+    for (const dependencyName of WorkspaceStager.getRuntimeDependencyNames(
       sourcePackage
     )) {
       const dependencyPathParts = dependencyName.split('/');
@@ -246,7 +230,7 @@ export class WorkspaceStager {
     return fs.copy(sourceEntry, targetEntry);
   }
 
-  private getRuntimeDependencyNames(packageJson: PackageJson) {
+  private static getRuntimeDependencyNames(packageJson: PackageJson) {
     return RUNTIME_DEPENDENCY_FIELDS.flatMap(field =>
       Object.keys(packageJson[field] || {})
     );

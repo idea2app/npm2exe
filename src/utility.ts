@@ -1,4 +1,7 @@
 import path from 'node:path';
+import gitignoreToGlob from 'gitignore-to-glob';
+import { ByteSize } from 'web-utility';
+import { fs } from 'zx';
 
 export const LOCK_FILES = [
   'pnpm-lock.yaml',
@@ -22,42 +25,43 @@ export const getExtractionCommand = (extension: string): 'zip' | 'tar' =>
 export const formatBytes = (size: number): string => {
   if (!Number.isFinite(size) || size <= 0) return '0 B';
 
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const exponent = Math.min(
-    Math.floor(Math.log(size) / Math.log(1024)),
-    units.length - 1
-  );
-  const value = size / 1024 ** exponent;
-
-  return `${value.toFixed(value >= 10 || exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+  return new ByteSize(size).toShortString(size < 1024 ? 0 : 1);
 };
 
 export const logStep =
   (label: string) =>
   <This, Args extends unknown[], Return>(
     method: (this: This, ...args: Args) => Return,
-    context: ClassMethodDecoratorContext<
+    _context: ClassMethodDecoratorContext<
       This,
       (this: This, ...args: Args) => Return
     >
   ) =>
     async function (this: This, ...args: Args): Promise<Awaited<Return>> {
-      const startedAt = performance.now();
+      const title = `[npm2exe] ${label}`;
 
-      console.info(`[npm2exe] start ${label}`);
-
+      console.info(`\n${title}\n`);
+      console.time(title);
       try {
-        const result = await method.apply(this, args);
-        const elapsed = Math.round(performance.now() - startedAt);
-
-        console.info(`[npm2exe] end ${label} (${elapsed}ms)`);
-
-        return result as Awaited<Return>;
-      } catch (error) {
-        const elapsed = Math.round(performance.now() - startedAt);
-
-        console.error(`[npm2exe] end ${label} (${elapsed}ms)`);
-
-        throw error;
+        return (await method.apply(this, args)) as Awaited<Return>;
+      } finally {
+        console.timeEnd(title);
       }
     };
+
+export const createIgnorePatterns = async (sourceFolder: string) => {
+  const gitIgnorePath = path.join(sourceFolder, '.gitignore');
+  const baseIgnorePatterns = [
+    '.git/**',
+    '.temp/**',
+    'out/**',
+    'node_modules/**',
+    '**/.temp/**',
+    '**/out/**',
+    '**/node_modules/**'
+  ];
+
+  if (!(await fs.pathExists(gitIgnorePath))) return baseIgnorePatterns;
+
+  return [...baseIgnorePatterns, ...gitignoreToGlob(gitIgnorePath)];
+};

@@ -1,18 +1,18 @@
 import path from 'node:path';
 import { fs } from 'zx';
 import fg from 'fast-glob';
-import semver from 'semver';
 import type { PackageJson } from 'type-fest';
 import {
   normalizeArch,
   normalizePlatform,
   PlatformPackager,
+  resolveNodeVersion,
   type TargetPlatform
 } from './platform.js';
 import {
   LOCK_FILES,
+  createIgnorePatterns,
   logStep,
-  normalizeVersion,
   toPosixPath,
   toWindowsPath
 } from './utility.js';
@@ -56,9 +56,11 @@ class ProjectPackager {
   ) {}
 
   async pack() {
-    await fs.remove(this.context.tempRoot);
-    await fs.ensureDir(this.context.appFolder);
-    await fs.ensureDir(this.context.outputFolder);
+    const { tempRoot, appFolder, outputFolder, packageName } = this.context;
+
+    await fs.remove(tempRoot);
+    await fs.ensureDir(appFolder);
+    await fs.ensureDir(outputFolder);
 
     await this.stageApplication();
 
@@ -70,44 +72,46 @@ class ProjectPackager {
 
     return {
       outputFile,
-      packageName: this.context.packageName,
-      tempRoot: this.context.tempRoot,
+      packageName,
+      tempRoot,
       runtimeVersion
     };
   }
 
   @logStep('stage application files')
   async stageApplication() {
+    const { sourceFolder, sourcePackage, appFolder } = this.context;
+
     const stagedWorkspacePackage = await this.workspaceStager.stagePackage({
-      sourceFolder: this.context.sourceFolder,
-      sourcePackage: this.context.sourcePackage,
-      appFolder: this.context.appFolder
+      sourceFolder,
+      sourcePackage,
+      appFolder
     });
 
     if (!stagedWorkspacePackage) {
       await this.copyProjectFiles({
-        sourceFolder: this.context.sourceFolder,
-        appFolder: this.context.appFolder,
-        sourcePackage: this.context.sourcePackage
+        sourceFolder,
+        appFolder,
+        sourcePackage
       });
-      await this.platformPackager.installProductionDependencies(
-        this.context.appFolder
-      );
+      await this.platformPackager.installProductionDependencies(appFolder);
     }
   }
 
-  @logStep('install node runtime')
+  @logStep('install Node.js runtime')
   async installRuntime() {
+    const { sourcePackage, nodeVersion, runtimeFolder, platform, runtimeArch } =
+      this.context;
     const version = await resolveNodeVersion({
-      sourcePackage: this.context.sourcePackage,
-      overrideVersion: this.context.nodeVersion
+      sourcePackage,
+      overrideVersion: nodeVersion
     });
 
     this.context.nodePath = await this.platformPackager.installNodeRuntime({
       version,
-      runtimeFolder: this.context.runtimeFolder,
-      platform: this.context.platform,
-      arch: this.context.runtimeArch
+      runtimeFolder,
+      platform,
+      arch: runtimeArch
     });
 
     return version;
@@ -115,18 +119,19 @@ class ProjectPackager {
 
   @logStep('create launchers')
   async createLaunchers() {
-    if (!this.context.nodePath)
+    const { tempRoot, sourcePackage, nodePath, platform, packageName } =
+      this.context;
+
+    if (!nodePath)
       throw new Error(
         'Node runtime must be installed before creating launchers'
       );
 
-    const { tempRoot, sourcePackage, nodePath, platform } = this.context;
-
-    if (!sourcePackage.bin) return;
+    if (!sourcePackage.bin) throw new Error('package.json bin is required');
 
     const entries =
       typeof sourcePackage.bin === 'string'
-        ? [[sourcePackage.name || 'app', sourcePackage.bin]]
+        ? [[packageName || 'app', sourcePackage.bin]]
         : Object.entries(sourcePackage.bin);
     const archiveRoot = path.join(tempRoot, '../..');
     const nodeRelativePath = path.relative(archiveRoot, nodePath);
@@ -180,33 +185,37 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
 
   @logStep('package bundle')
   async packageBundle() {
-    const outputBaseName =
-      this.context.outputName || this.context.packageBaseName;
+    const {
+      outputName,
+      packageBaseName,
+      outputFolder,
+      platform,
+      tempRoot,
+      compressionLevel
+    } = this.context;
+    const outputBaseName = outputName || packageBaseName;
     const outputFile = path.join(
-      this.context.outputFolder,
-      this.context.platform === 'win' ? `${outputBaseName}.exe` : outputBaseName
+      outputFolder,
+      platform === 'win' ? `${outputBaseName}.exe` : outputBaseName
     );
-    const archiveRoot = path.resolve(this.context.tempRoot, '../..');
+    const archiveRoot = path.resolve(tempRoot, '../..');
 
-    if (this.context.platform === 'win') {
+    if (platform === 'win') {
       await this.platformPackager.packageWith7Zip({
         tempRoot: archiveRoot,
         outputFile,
-        compressionLevel: this.context.compressionLevel
+        compressionLevel
       });
     } else {
       const installScript = `./${toPosixPath(
-        path.relative(
-          archiveRoot,
-          path.join(this.context.tempRoot, 'install.sh')
-        )
+        path.relative(archiveRoot, path.join(tempRoot, 'install.sh'))
       )}`;
 
       await this.platformPackager.packageWithMakeself({
         tempRoot: archiveRoot,
         outputFile,
         installScript,
-        compressionLevel: this.context.compressionLevel
+        compressionLevel
       });
     }
 
@@ -216,7 +225,7 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
   private async copyProjectFiles({
     sourceFolder,
     appFolder,
-    sourcePackage
+    sourcePackage: _sourcePackage
   }: ProjectFilesCopyInput) {
     const entries = new Set(['package.json', '.npmrc', 'pnpm-workspace.yaml']);
 
@@ -224,16 +233,11 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       if (await fs.pathExists(path.join(sourceFolder, lockFile)))
         entries.add(lockFile);
 
-    const patterns =
-      Array.isArray(sourcePackage.files) && sourcePackage.files.length > 0
-        ? sourcePackage.files
-        : ['**/*'];
-
-    for (const item of await fg(patterns, {
+    for (const item of await fg('**/*', {
       cwd: sourceFolder,
       dot: true,
       onlyFiles: false,
-      ignore: ['.git/**', '.temp/**', 'out/**', 'node_modules/**']
+      ignore: await createIgnorePatterns(sourceFolder)
     }))
       entries.add(item);
 
@@ -246,7 +250,8 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
   }
 
   private async createInstallScript() {
-    const scriptPath = path.join(this.context.tempRoot, 'install.sh');
+    const { tempRoot } = this.context;
+    const scriptPath = path.join(tempRoot, 'install.sh');
 
     await fs.outputFile(
       scriptPath,
@@ -308,37 +313,4 @@ export async function packProject({
   const packager = new ProjectPackager(context);
 
   return packager.pack();
-}
-
-export async function resolveNodeVersion({
-  sourcePackage = {},
-  overrideVersion
-}: {
-  sourcePackage?: PackageJson;
-  overrideVersion?: string;
-}) {
-  if (overrideVersion) return normalizeVersion(overrideVersion);
-
-  const response = await fetch('https://nodejs.org/dist/index.json');
-
-  if (!response.ok)
-    throw new Error(`Failed to fetch node versions: ${response.status}`);
-
-  const index = (await response.json()) as { version: string }[];
-  const range = sourcePackage.engines?.node;
-
-  if (range) {
-    const matched = semver.maxSatisfying(
-      index.map(({ version }) => version),
-      range
-    );
-
-    if (matched) return matched;
-  }
-
-  const latest = index[0]?.version;
-
-  if (latest) return latest;
-
-  throw new Error('No node versions available from nodejs.org index');
 }

@@ -1,9 +1,12 @@
 import os from 'node:os';
 import path from 'node:path';
+import { HTTPClient } from 'koajax';
+import semver from 'semver';
+import type { PackageJson } from 'type-fest';
 import { $, fs, usePowerShell } from 'zx';
 import fg from 'fast-glob';
 import { DownloadService } from './download.js';
-import { getExtractionCommand } from './utility.js';
+import { getExtractionCommand, normalizeVersion } from './utility.js';
 
 export type TargetPlatform = 'linux' | 'darwin' | 'win';
 
@@ -36,18 +39,15 @@ const INSTALLERS = [
   { name: 'npm', attempts: [['install', '--omit=dev']] }
 ] as const;
 
-const configureShell = () => {
-  if (process.platform !== 'win32') return;
+const jsonClient = new HTTPClient({ responseType: 'json' });
 
+if (process.platform === 'win32')
   if (typeof $.shell === 'string')
     $.quote = arg => `'${arg.replace(/'/g, `'\\''`)}'`;
   else {
     usePowerShell();
     $.prefix = '& ';
   }
-};
-
-configureShell();
 
 export const normalizePlatform = (platform: string): TargetPlatform => {
   if (platform === 'win32' || platform === 'win') return 'win';
@@ -72,6 +72,36 @@ export const normalizeArch = (
 
   throw new Error(`Unsupported architecture: ${arch}`);
 };
+
+export async function resolveNodeVersion({
+  sourcePackage = {},
+  overrideVersion
+}: {
+  sourcePackage?: PackageJson;
+  overrideVersion?: string;
+}) {
+  if (overrideVersion) return normalizeVersion(overrideVersion);
+
+  const { body: index = [] } = await jsonClient.get<{ version: string }[]>(
+    new URL('https://nodejs.org/dist/index.json')
+  );
+  const range = sourcePackage.engines?.node;
+
+  if (range) {
+    const matched = semver.maxSatisfying(
+      index.map(({ version }) => version),
+      range
+    );
+
+    if (matched) return matched;
+  }
+
+  const latest = index[0]?.version;
+
+  if (latest) return latest;
+
+  throw new Error('No node versions available from nodejs.org index');
+}
 
 export class PlatformPackager {
   constructor(private readonly downloadService = new DownloadService()) {}
@@ -157,9 +187,7 @@ export class PlatformPackager {
     if (!matches.length)
       throw new Error('Node runtime binary not found after extraction');
 
-    matches.sort();
-
-    return matches[0];
+    return matches.sort()[0];
   }
 
   async packageWithMakeself({
@@ -184,11 +212,14 @@ export class PlatformPackager {
       await this.installMakeself();
 
     const targetDirectory = '$HOME';
+    const compressionOptions = compressionLevel
+      ? { mode: '--gzip', level: String(compressionLevel) }
+      : { mode: '--nocomp' };
 
-    if (compressionLevel)
-      return $`${makeselfPath} --gzip --complevel ${String(compressionLevel)} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+    if ('level' in compressionOptions)
+      return $`${makeselfPath} ${compressionOptions.mode} --complevel ${compressionOptions.level} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
 
-    return $`${makeselfPath} --nocomp --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+    return $`${makeselfPath} ${compressionOptions.mode} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
   }
 
   async packageWith7Zip({
@@ -236,18 +267,14 @@ RunProgram="cmd.exe /c install.cmd"
   }
 
   private async resolveInstallersByLockFile(appFolder: string) {
-    if (await fs.pathExists(path.join(appFolder, 'pnpm-lock.yaml')))
-      return [INSTALLERS[0]];
-
-    if (await fs.pathExists(path.join(appFolder, 'yarn.lock')))
-      return [INSTALLERS[1]];
-    if (
-      (await fs.pathExists(path.join(appFolder, 'package-lock.json'))) ||
-      (await fs.pathExists(path.join(appFolder, 'npm-shrinkwrap.json')))
-    )
-      return [INSTALLERS[2]];
-
-    return INSTALLERS;
+    return (await fs.pathExists(path.join(appFolder, 'pnpm-lock.yaml')))
+      ? [INSTALLERS[0]]
+      : (await fs.pathExists(path.join(appFolder, 'yarn.lock')))
+        ? [INSTALLERS[1]]
+        : (await fs.pathExists(path.join(appFolder, 'package-lock.json'))) ||
+            (await fs.pathExists(path.join(appFolder, 'npm-shrinkwrap.json')))
+          ? [INSTALLERS[2]]
+          : INSTALLERS;
   }
 
   private async commandExists(command: string): Promise<boolean> {
@@ -355,20 +382,12 @@ RunProgram="cmd.exe /c install.cmd"
   }
 
   private async findLatestReleaseAsset(repository: string, pattern: RegExp) {
-    const response = await fetch(
-      `https://api.github.com/repos/${repository}/releases/latest`,
-      { headers: { Accept: 'application/vnd.github+json' } }
-    );
-
-    if (!response.ok)
-      throw new Error(
-        `Failed to fetch ${repository} release: ${response.status}`
-      );
-
-    const release = (await response.json()) as {
+    const { body: release } = await jsonClient.get<{
       assets?: Record<'name' | 'browser_download_url', string>[];
-    };
-    const asset = release.assets?.find(({ name }) => pattern.test(name));
+    }>(new URL(`https://api.github.com/repos/${repository}/releases/latest`), {
+      Accept: 'application/vnd.github+json'
+    });
+    const asset = release?.assets?.find(({ name }) => pattern.test(name));
 
     if (!asset)
       throw new Error(`No asset matching ${pattern} in ${repository} release`);
