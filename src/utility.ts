@@ -22,28 +22,27 @@ export const toWindowsPath = (filePath: string): string =>
 export const getExtractionCommand = (extension: string): 'zip' | 'tar' =>
   extension === 'zip' ? 'zip' : 'tar';
 
-export const formatBytes = (size: number): string => {
-  if (!Number.isFinite(size) || size <= 0) return '0 B';
-
-  return new ByteSize(size).toShortString(size < 1024 ? 0 : 1);
-};
+export const formatBytes = (size: number): string =>
+  !Number.isFinite(size) || size <= 0
+    ? '0 B'
+    : new ByteSize(size).toShortString(size < 1024 ? 0 : 1);
 
 export const logStep =
   (label: string) =>
   <This, Args extends unknown[], Return>(
-    method: (this: This, ...args: Args) => Return,
+    method: (this: This, ...args: Args) => Promise<Return>,
     _context: ClassMethodDecoratorContext<
       This,
-      (this: This, ...args: Args) => Return
+      (this: This, ...args: Args) => Promise<Return>
     >
   ) =>
-    async function (this: This, ...args: Args): Promise<Awaited<Return>> {
+    async function (this: This, ...args: Args): Promise<Return> {
       const title = `[npm2exe] ${label}`;
 
       console.info(`\n${title}\n`);
       console.time(title);
       try {
-        return (await method.apply(this, args)) as Awaited<Return>;
+        return await method.apply(this, args);
       } finally {
         console.timeEnd(title);
       }

@@ -2,7 +2,8 @@ import path from 'node:path';
 import { fs } from 'zx';
 import fg from 'fast-glob';
 import type { PackageJson } from 'type-fest';
-import { createIgnorePatterns } from './utility.js';
+import { ProgressRenderer } from './progress.js';
+import { createIgnorePatterns, logStep } from './utility.js';
 
 export interface ProjectFilesCopyInput {
   sourceFolder: string;
@@ -34,6 +35,7 @@ export class WorkspaceStager {
     private readonly installProductionDependencies: WorkspaceStagerInput['installProductionDependencies']
   ) {}
 
+  @logStep('stage workspace package')
   async stagePackage({
     sourceFolder,
     sourcePackage,
@@ -118,6 +120,7 @@ export class WorkspaceStager {
     }
   }
 
+  @logStep('copy workspace files')
   private async copyWorkspaceFiles(sourceFolder: string, targetFolder: string) {
     const relativePaths = await fg('**/*', {
       cwd: sourceFolder,
@@ -126,17 +129,29 @@ export class WorkspaceStager {
       followSymbolicLinks: false,
       ignore: await createIgnorePatterns(sourceFolder)
     });
+    const progressRenderer = new ProgressRenderer(
+      'Copying workspace files',
+      'items'
+    );
+    let copied = 0;
 
-    for (const relativePath of relativePaths) {
-      const sourcePath = path.join(sourceFolder, relativePath);
-      const stats = await fs.lstat(sourcePath);
-      const targetPath = path.join(targetFolder, relativePath);
+    try {
+      for (const relativePath of relativePaths) {
+        const sourcePath = path.join(sourceFolder, relativePath);
+        const stats = await fs.lstat(sourcePath);
+        const targetPath = path.join(targetFolder, relativePath);
 
-      if (stats.isDirectory()) await fs.ensureDir(targetPath);
-      else await fs.copy(sourcePath, targetPath);
+        if (stats.isDirectory()) await fs.ensureDir(targetPath);
+        else await fs.copy(sourcePath, targetPath);
+
+        progressRenderer.update(++copied, relativePaths.length);
+      }
+    } finally {
+      progressRenderer.close();
     }
   }
 
+  @logStep('copy resolved workspace node_modules')
   private async copyResolvedNodeModules({
     sourcePackageFolder,
     targetPackageFolder
@@ -170,15 +185,32 @@ export class WorkspaceStager {
         { dereference: true }
       );
 
-    for (const dependencyName of WorkspaceStager.getRuntimeDependencyNames(
-      sourcePackage
-    )) {
-      const dependencyPathParts = dependencyName.split('/');
+    const dependencyNames =
+      WorkspaceStager.getRuntimeDependencyNames(sourcePackage);
+    const progressRenderer = new ProgressRenderer(
+      'Copying resolved workspace node_modules',
+      'items'
+    );
+    let copied = 0;
 
-      await this.copyInstalledNodeModulesEntry({
-        sourceEntry: path.join(sourceNodeModulesFolder, ...dependencyPathParts),
-        targetEntry: path.join(targetNodeModulesFolder, ...dependencyPathParts)
-      });
+    try {
+      for (const dependencyName of dependencyNames) {
+        const dependencyPathParts = dependencyName.split('/');
+
+        await this.copyInstalledNodeModulesEntry({
+          sourceEntry: path.join(
+            sourceNodeModulesFolder,
+            ...dependencyPathParts
+          ),
+          targetEntry: path.join(
+            targetNodeModulesFolder,
+            ...dependencyPathParts
+          )
+        });
+        progressRenderer.update(++copied, dependencyNames.length);
+      }
+    } finally {
+      progressRenderer.close();
     }
   }
 

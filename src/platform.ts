@@ -40,6 +40,7 @@ const INSTALLERS = [
 ] as const;
 
 const jsonClient = new HTTPClient({ responseType: 'json' });
+$.verbose = true;
 
 if (process.platform === 'win32')
   if (typeof $.shell === 'string')
@@ -73,6 +74,57 @@ export const normalizeArch = (
   throw new Error(`Unsupported architecture: ${arch}`);
 };
 
+interface GitHubRelease {
+  assets?: Record<'name' | 'browser_download_url', string>[];
+}
+
+const commandExists = async (command: string): Promise<boolean> => {
+  try {
+    if (process.platform === 'win32') await $`where.exe ${command}`;
+    else await $`which ${command}`;
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const resolveRunner = async (name: string) =>
+  (await commandExists(name))
+    ? { command: name, args: [] as string[] }
+    : (name === 'pnpm' || name === 'yarn') && (await commandExists('corepack'))
+      ? { command: 'corepack', args: [name] }
+      : null;
+
+const runCommand = (
+  runner: { command: string; args: string[] },
+  args: readonly string[],
+  cwd: string
+) =>
+  $({
+    cwd,
+    stdio: 'inherit'
+  })`${runner.command} ${[...runner.args, ...args]}`;
+
+const extractArchive = async ({
+  extension,
+  archivePath,
+  runtimeFolder,
+  platform
+}: {
+  extension: string;
+  archivePath: string;
+  runtimeFolder: string;
+  platform: TargetPlatform;
+}) =>
+  getExtractionCommand(extension) === 'tar'
+    ? $`tar -xf ${archivePath} -C ${runtimeFolder}`
+    : platform === 'win' && (await commandExists('powershell'))
+      ? $`powershell -NoProfile -Command Expand-Archive -Path ${archivePath} -DestinationPath ${runtimeFolder} -Force`
+      : (await commandExists('python'))
+        ? $`python -m zipfile -e ${archivePath} ${runtimeFolder}`
+        : $`unzip -q -o ${archivePath} -d ${runtimeFolder}`;
+
 export async function resolveNodeVersion({
   sourcePackage = {},
   overrideVersion
@@ -83,7 +135,7 @@ export async function resolveNodeVersion({
   if (overrideVersion) return normalizeVersion(overrideVersion);
 
   const { body: index = [] } = await jsonClient.get<{ version: string }[]>(
-    new URL('https://nodejs.org/dist/index.json')
+    'https://nodejs.org/dist/index.json'
   );
   const range = sourcePackage.engines?.node;
 
@@ -107,10 +159,11 @@ export class PlatformPackager {
   constructor(private readonly downloadService = new DownloadService()) {}
 
   async installProductionDependencies(appFolder: string) {
-    const installers = await this.resolveInstallersByLockFile(appFolder);
+    const installers =
+      await PlatformPackager.resolveInstallersByLockFile(appFolder);
 
     for (const installer of installers) {
-      const runner = await this.resolveRunner(installer.name);
+      const runner = await resolveRunner(installer.name);
 
       if (!runner) {
         if (installers.length === 1)
@@ -123,8 +176,7 @@ export class PlatformPackager {
 
       for (const args of installer.attempts)
         try {
-          await this.runCommand(runner, args, appFolder);
-          return;
+          return await runCommand(runner, args, appFolder);
         } catch {
           // fallback next attempt
         }
@@ -159,7 +211,7 @@ export class PlatformPackager {
     );
     await fs.remove(runtimeFolder);
     await fs.ensureDir(runtimeFolder);
-    await this.extractArchive({
+    await extractArchive({
       extension,
       archivePath,
       runtimeFolder,
@@ -171,10 +223,11 @@ export class PlatformPackager {
       runtimeFolder,
       `node-${version}-${platform}-${arch}`
     );
-    const preferred =
-      platform === 'win'
-        ? path.join(distFolder, binaryName)
-        : path.join(distFolder, 'bin', binaryName);
+    const preferred = path.join(
+      distFolder,
+      platform === 'win' ? '.' : 'bin',
+      binaryName
+    );
 
     if (await fs.pathExists(preferred)) return preferred;
 
@@ -212,14 +265,12 @@ export class PlatformPackager {
       await this.installMakeself();
 
     const targetDirectory = '$HOME';
-    const compressionOptions = compressionLevel
-      ? { mode: '--gzip', level: String(compressionLevel) }
-      : { mode: '--nocomp' };
+    const compressionOption = compressionLevel ? '--gzip' : '--nocomp';
 
-    if ('level' in compressionOptions)
-      return $`${makeselfPath} ${compressionOptions.mode} --complevel ${compressionOptions.level} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+    if (compressionLevel)
+      return $`${makeselfPath} ${compressionOption} --complevel ${String(compressionLevel)} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
 
-    return $`${makeselfPath} ${compressionOptions.mode} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
+    return $`${makeselfPath} ${compressionOption} --target ${targetDirectory} ${tempRoot} ${outputFile} "npm2exe bundle" ${installScript}`;
   }
 
   async packageWith7Zip({
@@ -266,8 +317,8 @@ RunProgram="cmd.exe /c install.cmd"
     );
   }
 
-  private async resolveInstallersByLockFile(appFolder: string) {
-    return (await fs.pathExists(path.join(appFolder, 'pnpm-lock.yaml')))
+  static resolveInstallersByLockFile = async (appFolder: string) =>
+    (await fs.pathExists(path.join(appFolder, 'pnpm-lock.yaml')))
       ? [INSTALLERS[0]]
       : (await fs.pathExists(path.join(appFolder, 'yarn.lock')))
         ? [INSTALLERS[1]]
@@ -275,65 +326,6 @@ RunProgram="cmd.exe /c install.cmd"
             (await fs.pathExists(path.join(appFolder, 'npm-shrinkwrap.json')))
           ? [INSTALLERS[2]]
           : INSTALLERS;
-  }
-
-  private async commandExists(command: string): Promise<boolean> {
-    try {
-      if (process.platform === 'win32') await $`where.exe ${command}`;
-      else await $`which ${command}`;
-
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async resolveRunner(name: string) {
-    if (await this.commandExists(name))
-      return { command: name, args: [] as string[] };
-
-    if (
-      (name === 'pnpm' || name === 'yarn') &&
-      (await this.commandExists('corepack'))
-    )
-      return { command: 'corepack', args: [name] };
-
-    return null;
-  }
-
-  private runCommand(
-    runner: { command: string; args: string[] },
-    args: readonly string[],
-    cwd: string
-  ) {
-    return $({
-      cwd,
-      stdio: 'inherit'
-    })`${runner.command} ${[...runner.args, ...args]}`;
-  }
-
-  private async extractArchive({
-    extension,
-    archivePath,
-    runtimeFolder,
-    platform
-  }: {
-    extension: string;
-    archivePath: string;
-    runtimeFolder: string;
-    platform: TargetPlatform;
-  }) {
-    if (getExtractionCommand(extension) === 'tar')
-      return $`tar -xf ${archivePath} -C ${runtimeFolder}`;
-
-    if (platform === 'win' && (await this.commandExists('powershell')))
-      return $`powershell -NoProfile -Command Expand-Archive -Path ${archivePath} -DestinationPath ${runtimeFolder} -Force`;
-
-    if (await this.commandExists('python'))
-      return $`python -m zipfile -e ${archivePath} ${runtimeFolder}`;
-
-    return $`unzip -q -o ${archivePath} -d ${runtimeFolder}`;
-  }
 
   private async installMakeself() {
     const makeselfFolder = path.join(os.tmpdir(), 'npm2exe-makeself');
@@ -382,11 +374,10 @@ RunProgram="cmd.exe /c install.cmd"
   }
 
   private async findLatestReleaseAsset(repository: string, pattern: RegExp) {
-    const { body: release } = await jsonClient.get<{
-      assets?: Record<'name' | 'browser_download_url', string>[];
-    }>(new URL(`https://api.github.com/repos/${repository}/releases/latest`), {
-      Accept: 'application/vnd.github+json'
-    });
+    const { body: release } = await jsonClient.get<GitHubRelease>(
+      `https://api.github.com/repos/${repository}/releases/latest`,
+      { Accept: 'application/vnd.github+json' }
+    );
     const asset = release?.assets?.find(({ name }) => pattern.test(name));
 
     if (!asset)

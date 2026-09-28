@@ -16,6 +16,7 @@ import {
   toPosixPath,
   toWindowsPath
 } from './utility.js';
+import { ProgressRenderer } from './progress.js';
 import { WorkspaceStager, type ProjectFilesCopyInput } from './workspace.js';
 
 interface PackProjectInput {
@@ -47,7 +48,9 @@ interface ProjectPackagerContext {
 class ProjectPackager {
   private readonly workspaceStager = new WorkspaceStager(
     input => this.copyProjectFiles(input),
-    appFolder => this.platformPackager.installProductionDependencies(appFolder)
+    async appFolder => {
+      await this.platformPackager.installProductionDependencies(appFolder);
+    }
   );
 
   constructor(
@@ -222,18 +225,23 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     return outputFile;
   }
 
+  @logStep('copy project files')
   private async copyProjectFiles({
     sourceFolder,
     appFolder,
-    sourcePackage: _sourcePackage
+    sourcePackage
   }: ProjectFilesCopyInput) {
     const entries = new Set(['package.json', '.npmrc', 'pnpm-workspace.yaml']);
+    const patterns =
+      Array.isArray(sourcePackage.files) && sourcePackage.files.length > 0
+        ? sourcePackage.files
+        : ['**/*'];
 
     for (const lockFile of LOCK_FILES)
       if (await fs.pathExists(path.join(sourceFolder, lockFile)))
         entries.add(lockFile);
 
-    for (const item of await fg('**/*', {
+    for (const item of await fg(patterns, {
       cwd: sourceFolder,
       dot: true,
       onlyFiles: false,
@@ -241,11 +249,23 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     }))
       entries.add(item);
 
-    for (const relativePath of entries) {
-      const sourcePath = path.join(sourceFolder, relativePath);
+    const progressRenderer = new ProgressRenderer(
+      'Copying project files',
+      'items'
+    );
+    let copied = 0;
 
-      if (await fs.pathExists(sourcePath))
-        await fs.copy(sourcePath, path.join(appFolder, relativePath));
+    try {
+      for (const relativePath of entries) {
+        const sourcePath = path.join(sourceFolder, relativePath);
+
+        if (await fs.pathExists(sourcePath)) {
+          await fs.copy(sourcePath, path.join(appFolder, relativePath));
+          progressRenderer.update(++copied, entries.size);
+        }
+      }
+    } finally {
+      progressRenderer.close();
     }
   }
 
