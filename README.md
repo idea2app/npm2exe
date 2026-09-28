@@ -27,24 +27,24 @@ Options:
 - `--compression-level <0-9>` compression level (default `0`, no compression; higher levels trade speed for a smaller archive)
 - `--verbose` or `-V` enable Verbose output
 
-`npm2exe` reads your `package.json#bin`, installs only production dependencies into a temporary app directory, downloads a matching stock Node.js runtime, then wraps both into a self-extracting package.[9][10]
+`npm2exe` reads your [`package.json#bin`][9], installs only production dependencies into a temporary app directory, downloads a matching [stock Node.js runtime][10], then wraps both into a [self-extracting package][10].
 
 ## Compared with Node SEA / pkg / nexe / caxa
 
-| Feature          | npm2exe                                                                        | Node SEA                             | pkg                                                     | nexe                                      | caxa                                        |
-| ---------------- | ------------------------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------------- | ----------------------------------------- | ------------------------------------------- |
-| OS / CPU         | ✅ [`linux` / `darwin` / `win`; `x64` / `arm64` / `armv7l`; Windows `x86`][10] | ✅ [stock Node target][4]            | ✅ [Linux / macOS / Windows / Alpine / static Linux][6] | ✅ [target triple][13]                    | ✅ [Windows / macOS / Linux][14]            |
-| Node version     | ✅ [build `>=22`; runtime auto-resolved or overridden][9][10]                  | ✅ [Node SEA in official Node][4]    | ✅ [build `>=22`; `node22` / `node24` / `latest`][5][6] | ✅ [runtime version in target string][13] | ✅ [build `>=22.15.0`][14]                  |
-| Entry model      | ✅ [`package.json#bin`, one or many launchers][10]                             | ⚠️ [one `main` only][4]              | ⚠️ [one package entry][5]                               | ⚠️ [one input or stdin bundle][13]        | ✅ [command array; multi-target output][14] |
-| Monorepo         | ✅ [`workspace:` staging][11]                                                  | ❓ [no dedicated flow documented][4] | ❓ [no dedicated flow documented][7]                    | ❓ [no dedicated flow documented][13]     | ❓ [no dedicated flow documented][14]       |
-| Installed layout | ✅ [real app tree in home/profile][10]                                         | ⚠️ [in-binary VFS][4]                | ⚠️ [snapshot FS + cache extraction][8]                  | ⚠️ [single executable VFS][13]            | ✅ [extracted app tree in temp/cache][14]   |
-| Native addons    | ✅ [normal on-disk loading][10]                                                | ⚠️ [must extract first][4]           | ⚠️ [supported, but extracted to cache][8]               | ❌ [ship beside binary][13]               | ✅ [extracted before run][14]               |
-| Config           | ✅ [low][3][12]                                                                | ⚠️ [medium][4]                       | ⚠️ [medium / high][7]                                   | ⚠️ [medium / high][13]                    | ⚠️ [low / medium][14]                       |
-| Wrapper form     | ✅ [7z SFX / `makeself`][10]                                                   | ⚠️ [injected stock Node binary][4]   | ⚠️ [patched runtime or SEA][5][8]                       | ⚠️ [compiled single executable][13]       | ⚠️ [Rust self-extractor][14]                |
+| Feature          | npm2exe                                                                        | Node SEA                             | pkg                                                       | nexe                                      | caxa                                        |
+| ---------------- | ------------------------------------------------------------------------------ | ------------------------------------ | --------------------------------------------------------- | ----------------------------------------- | ------------------------------------------- |
+| OS / CPU         | ✅ [`linux` / `darwin` / `win`; `x64` / `arm64` / `armv7l`; Windows `x86`][10] | ✅ [stock Node target][4]            | ✅ [Linux / macOS / Windows / Alpine / static Linux][6]   | ✅ [target triple][13]                    | ✅ [Windows / macOS / Linux][14]            |
+| Node version     | ✅ [build `>=22`][9]; [runtime auto-resolved or overridden][10]                | ✅ [Node SEA in official Node][4]    | ✅ [build `>=22`][5]; [`node22` / `node24` / `latest`][6] | ✅ [runtime version in target string][13] | ✅ [build `>=22.15.0`][14]                  |
+| Entry model      | ✅ [`package.json#bin`, one or many launchers][10]                             | ⚠️ [one `main` only][4]              | ⚠️ [one package entry][5]                                 | ⚠️ [one input or stdin bundle][13]        | ✅ [command array; multi-target output][14] |
+| Monorepo         | ✅ [`workspace:` staging][11]                                                  | ❓ [no dedicated flow documented][4] | ❓ [no dedicated flow documented][7]                      | ❓ [no dedicated flow documented][13]     | ❓ [no dedicated flow documented][14]       |
+| Installed layout | ✅ [real app tree in home/profile][10]                                         | ⚠️ [in-binary VFS][4]                | ⚠️ [snapshot FS + cache extraction][8]                    | ⚠️ [single executable VFS][13]            | ✅ [extracted app tree in temp/cache][14]   |
+| Native addons    | ✅ [normal on-disk loading][10]                                                | ⚠️ [must extract first][4]           | ⚠️ [supported, but extracted to cache][8]                 | ❌ [ship beside binary][13]               | ✅ [extracted before run][14]               |
+| Config           | ✅ [low][3] ([npm2exe configuration][12])                                      | ⚠️ [medium][4]                       | ⚠️ [medium / high][7]                                     | ⚠️ [medium / high][13]                    | ⚠️ [low / medium][14]                       |
+| Wrapper form     | ✅ [7z SFX][10] / [`makeself`][10]                                             | ⚠️ [injected stock Node binary][4]   | ⚠️ [patched runtime][5] or [SEA][8]                       | ⚠️ [compiled single executable][13]       | ⚠️ [Rust self-extractor][14]                |
 
-In short: **SEA / pkg / nexe** lean toward a tighter single-binary image, while **caxa / npm2exe** lean toward extracting and running a real app tree. That makes `npm2exe` especially friendly to regular Node.js install behavior and `workspace:` monorepos.[4][10][11][13][14]
+In short: [**SEA**][4], [**pkg**][5], and [**nexe**][13] lean toward a tighter single-binary image, while [**caxa**][14] and [**npm2exe**][10] lean toward extracting and running a real app tree. That makes `npm2exe` especially friendly to regular Node.js install behavior and [`workspace:` monorepos][11].
 
-## Copyable GitHub Actions release workflow
+## GitHub Actions release workflow
 
 ```shell
 cd path/to/your/project
@@ -54,11 +54,11 @@ npx git-utility download https://github.com/idea2app/npm2exe main .github/workfl
 
 Notes:
 
-- The downloaded workflow example keeps a single packaging step, so no per-OS `shell` switching is needed.[15]
-- Build on each native runner instead of cross-packaging from one host, because `npm2exe` currently uses different wrapping backends for Windows and POSIX targets.[10]
-- Linux/macOS outputs are self-extracting shell archives; Windows output is a self-extracting `.exe`.[10]
-- The release asset is the installer wrapper. The final launcher gets installed into the user home/profile when the asset is executed.[10]
-- Code signing, notarization, and checksum publishing are intentionally left to the application repository.[4][10][14]
+- The downloaded workflow example keeps a [single packaging step][15], so no per-OS `shell` switching is needed.
+- Build on each native runner instead of cross-packaging from one host, because `npm2exe` currently uses different [wrapping backends for Windows and POSIX targets][10].
+- Linux/macOS outputs are [self-extracting shell archives][10]; Windows output is a [self-extracting `.exe`][10].
+- The release asset is the [installer wrapper][10]. The [final launcher][10] gets installed into the user home/profile when the asset is executed.
+- [Code signing][4], [notarization][10], and [checksum publishing][14] are intentionally left to the application repository.
 
 [1]: https://libraries.io/npm/npm2exe
 [2]: https://github.com/idea2app/npm2exe/actions/workflows/main.yml
