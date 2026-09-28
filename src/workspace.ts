@@ -56,7 +56,7 @@ export class WorkspaceStager {
       workspacePackage.name?.trim().replace(/\//g, '__') ||
       path.basename(workspaceRoot);
     const workspaceTempFolder = path.join(
-      sourceFolder,
+      workspaceRoot,
       '.temp',
       workspacePackageName
     );

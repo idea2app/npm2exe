@@ -42,8 +42,13 @@ export class DownloadService {
       responseType: 'arraybuffer'
     });
     const inkApplication =
-      process.stdout.isTTY &&
-      render(<DownloadProgressView label={label} loaded={0} total={0} />);
+      process.stderr.isTTY && !process.env.CI
+        ? render(<DownloadProgressView label={label} loaded={0} total={0} />, {
+            stdout: process.stderr,
+            stderr: process.stderr,
+            patchConsole: false
+          })
+        : null;
     let loaded = 0;
     let total = 0;
 
