@@ -1,10 +1,10 @@
-import os from 'node:os';
-import path from 'node:path';
+import fg from 'fast-glob';
 import { HTTPClient } from 'koajax';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import semver from 'semver';
 import type { PackageJson } from 'type-fest';
-import { $, fs } from 'zx';
-import fg from 'fast-glob';
+import { $, fs, os, path } from 'zx';
 
 import { downloadFile } from './download.js';
 import {
@@ -177,14 +177,14 @@ Directory=""
 RunProgram="cmd.exe /c install.cmd"
 ;!@InstallEnd@!
 `;
-
-    return fs.outputFile(
-      outputFile,
-      Buffer.concat([
-        await fs.readFile(sfxPath),
-        Buffer.from(config),
-        await fs.readFile(archivePath)
-      ])
+    async function* mergeStreams() {
+      yield* fs.createReadStream(sfxPath);
+      yield Buffer.from(config);
+      yield* fs.createReadStream(archivePath);
+    }
+    return pipeline(
+      Readable.from(mergeStreams()),
+      fs.createWriteStream(outputFile)
     );
   }
 

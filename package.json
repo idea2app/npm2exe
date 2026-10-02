@@ -1,6 +1,6 @@
 {
   "name": "npm2exe",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "LGPL-2.1-or-later",
   "author": "shiy2008@gmail.com",
   "description": "Pack a JavaScript local project to a Portable Executable",
@@ -40,7 +40,7 @@
   },
   "devDependencies": {
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^26.6.3",
+    "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/semver": "^7.8.0",
     "husky": "^9.1.7",
