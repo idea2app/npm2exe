@@ -10,16 +10,12 @@ import { downloadFile } from './download.js';
 import {
   commandExists,
   extractArchive,
+  githubClient,
+  GitHubRelease,
   INSTALLERS,
   normalizeVersion,
   TargetPlatform
 } from './utility.js';
-
-interface GitHubRelease {
-  assets?: Record<'name' | 'browser_download_url', string>[];
-}
-
-const jsonClient = new HTTPClient({ responseType: 'json' });
 
 export class PlatformPackager {
   static resolveRunner = async (name: string) =>
@@ -245,9 +241,8 @@ RunProgram="cmd.exe /c install.cmd"
   }
 
   private async findLatestReleaseAsset(repository: string, pattern: RegExp) {
-    const { body: release } = await jsonClient.get<GitHubRelease>(
-      `https://api.github.com/repos/${repository}/releases/latest`,
-      { Accept: 'application/vnd.github+json' }
+    const { body: release } = await githubClient.get<GitHubRelease>(
+      `repos/${repository}/releases/latest`
     );
     const asset = release?.assets?.find(({ name }) => pattern.test(name));
 
@@ -266,7 +261,7 @@ RunProgram="cmd.exe /c install.cmd"
   }) {
     if (overrideVersion) return normalizeVersion(overrideVersion);
 
-    const { body: index = [] } = await jsonClient.get<{ version: string }[]>(
+    const { body: index = [] } = await githubClient.get<{ version: string }[]>(
       'https://nodejs.org/dist/index.json'
     );
     const range = sourcePackage.engines?.node;

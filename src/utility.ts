@@ -1,5 +1,6 @@
-import path from 'node:path';
 import gitignoreToGlob from 'gitignore-to-glob';
+import { HTTPClient } from 'koajax';
+import path from 'node:path';
 import { ByteSize } from 'web-utility';
 import { $, fs } from 'zx';
 
@@ -146,3 +147,17 @@ export const extractArchive = async ({
       : (await commandExists('python'))
         ? $`python -m zipfile -e ${archivePath} ${runtimeFolder}`
         : $`unzip -q -o ${archivePath} -d ${runtimeFolder}`;
+
+export interface GitHubRelease {
+  assets?: Record<'name' | 'browser_download_url', string>[];
+}
+
+export const githubClient = new HTTPClient({
+  baseURI: 'https://api.github.com',
+  responseType: 'json'
+}).use(({ request }, next) => {
+  request.headers['Accept'] ||= 'application/vnd.github.v3+json';
+  request.headers['Authorization'] ||= `Bearer ${process.env.GITHUB_TOKEN}`;
+
+  return next();
+});
