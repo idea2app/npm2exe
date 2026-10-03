@@ -1,6 +1,6 @@
 {
   "name": "npm2exe",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "license": "LGPL-2.1-or-later",
   "author": "shiy2008@gmail.com",
   "description": "Pack a JavaScript local project to a Portable Executable",
@@ -63,8 +63,9 @@
     "prepare": "husky",
     "lint": "lint-staged",
     "build": "pkgroll",
-    "test": "npm run build  &&  tsx src/ .  &&  out/npm2exe  &&  ~/npm2exe -h  &&  pnpm --dir test-packages --filter test-child test",
-    "test-win": "npm run build  &&  tsx src/ .  &&  out\\npm2exe.exe -y  &&  %USERPROFILE%\\npm2exe -h  &&  pnpm --dir test-packages --filter test-child test",
+    "test-workspace": "tsx --test test/*.test.ts",
+    "test": "npm run build  &&  npm run test-workspace  &&  tsx src/ .  &&  out/npm2exe  &&  ~/npm2exe -h",
+    "test-win": "npm run build  &&  npm run test-workspace  &&  tsx src/ .  &&  out\\npm2exe.exe -y  &&  %USERPROFILE%\\npm2exe -h",
     "prepublishOnly": "npm run build"
   }
 }

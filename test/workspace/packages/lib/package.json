@@ -1,0 +1,7 @@
+{
+  "name": "fixture-workspace",
+  "main": "index.cjs",
+  "dependencies": {
+    "fixture-external": "*"
+  }
+}

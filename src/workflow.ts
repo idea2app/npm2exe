@@ -14,7 +14,11 @@ import {
   type TargetPlatform
 } from './utility.js';
 import { ProgressRenderer } from './progress.js';
-import { WorkspaceStager, type ProjectFilesCopyInput } from './workspace.js';
+import { WorkspaceStager } from './workspace.js';
+import {
+  DependencyCopier,
+  type ProjectFilesCopyInput
+} from './dependencies.js';
 
 interface PackProjectInput {
   projectFolder?: string;
@@ -43,9 +47,13 @@ interface ProjectPackagerContext {
 }
 
 class ProjectPackager {
+  private readonly dependencyCopier = new DependencyCopier(input =>
+    this.copyProjectFiles(input)
+  );
   private readonly workspaceStager = new WorkspaceStager(
     input => this.copyProjectFiles(input),
-    appFolder => this.platformPackager.installProductionDependencies(appFolder)
+    appFolder => this.platformPackager.installProductionDependencies(appFolder),
+    this.dependencyCopier
   );
 
   constructor(
@@ -73,7 +81,7 @@ class ProjectPackager {
 
   @logStep('stage application files')
   async stageApplication() {
-    const { sourceFolder, sourcePackage, appFolder } = this.context;
+    const { sourceFolder, sourcePackage, appFolder, tempRoot } = this.context;
 
     const stagedWorkspacePackage = await this.workspaceStager.stagePackage({
       sourceFolder,
@@ -82,11 +90,26 @@ class ProjectPackager {
     });
 
     if (!stagedWorkspacePackage) {
-      await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
+      const stagedPackageFolder = path.join(tempRoot, 'project');
 
-      await this.platformPackager.installProductionDependencies(appFolder);
-
-      await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
+      try {
+        await this.copyProjectFiles({
+          sourceFolder,
+          appFolder: stagedPackageFolder,
+          sourcePackage
+        });
+        await this.platformPackager.installProductionDependencies(
+          stagedPackageFolder
+        );
+        await this.dependencyCopier.copyPackage({
+          sourceFolder: stagedPackageFolder,
+          appFolder,
+          sourcePackage
+        });
+        await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
+      } finally {
+        await fs.remove(stagedPackageFolder);
+      }
     }
   }
 
@@ -300,7 +323,7 @@ export async function packProject({
 
   if (!packageName) throw new Error('package.json name is required');
 
-  const packageBaseName = packageName.replace(/\//g, '-');
+  const packageBaseName = packageName.replace(/[@/]+/g, '-');
   const platform = normalizePlatform(targetPlatform);
   const runtimeArch = normalizeArch(arch, platform);
   const tempRoot = path.join(
