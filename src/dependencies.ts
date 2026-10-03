@@ -17,7 +17,9 @@ export type ProjectFilesCopier = (
 interface DependencyCopyInput {
   sourcePackageFolder: string;
   targetPackageFolder: string;
+  appFolder: string;
   copiedPackages: Map<string, string>;
+  queue: DependencyCopyInput[];
 }
 
 const RUNTIME_DEPENDENCY_FIELDS = [
@@ -35,11 +37,18 @@ export class DependencyCopier {
     const sourcePackageFolder = await fs.realpath(input.sourceFolder);
     const targetPackageFolder = path.resolve(input.appFolder);
 
-    await this.copyDependencies({
+    const queue: DependencyCopyInput[] = [];
+    queue.push({
       sourcePackageFolder,
       targetPackageFolder,
-      copiedPackages: new Map([[targetPackageFolder, sourcePackageFolder]])
+      appFolder: targetPackageFolder,
+      copiedPackages: new Map([[targetPackageFolder, sourcePackageFolder]]),
+      queue
     });
+
+    // Export each level before its children so direct dependencies reserve their slots.
+    for (let index = 0; index < queue.length; index++)
+      await this.copyDependencies(queue[index]);
   }
 
   private async findInstalledDependency(
@@ -70,7 +79,9 @@ export class DependencyCopier {
   private async copyDependencies({
     sourcePackageFolder,
     targetPackageFolder,
-    copiedPackages
+    appFolder,
+    copiedPackages,
+    queue
   }: DependencyCopyInput) {
     const sourcePackage = (await fs.readJSON(
       path.join(sourcePackageFolder, 'package.json')
@@ -127,27 +138,69 @@ export class DependencyCopier {
             );
         } else {
           const resolvedEntry = await fs.realpath(sourceEntry);
-          const existingTarget = await this.findInstalledDependency(
+          const targetEntry = this.findTargetEntry(
             targetPackageFolder,
-            dependencyName
+            appFolder,
+            dependencyName,
+            resolvedEntry,
+            copiedPackages
           );
 
-          // Reuse only the same installed package; other versions need a local copy.
-          if (
-            !existingTarget ||
-            copiedPackages.get(existingTarget) !== resolvedEntry
-          )
+          if (copiedPackages.get(targetEntry) !== resolvedEntry) {
             await this.copyInstalledEntry(
               sourceEntry,
-              path.join(targetNodeModulesFolder, ...dependencyName.split('/')),
+              targetEntry,
               copiedPackages
             );
+            queue.push({
+              sourcePackageFolder: resolvedEntry,
+              targetPackageFolder: targetEntry,
+              appFolder,
+              copiedPackages,
+              queue
+            });
+          }
         }
 
         progressRenderer.update(++copied, dependencyNames.size);
       }
     } finally {
       progressRenderer.close();
+    }
+  }
+
+  private findTargetEntry(
+    packageFolder: string,
+    appFolder: string,
+    dependencyName: string,
+    resolvedEntry: string,
+    copiedPackages: Map<string, string>
+  ) {
+    let currentFolder = packageFolder;
+    let targetEntry = path.join(
+      currentFolder,
+      'node_modules',
+      ...dependencyName.split('/')
+    );
+
+    while (true) {
+      if (path.basename(currentFolder) !== 'node_modules') {
+        const candidate = path.join(
+          currentFolder,
+          'node_modules',
+          ...dependencyName.split('/')
+        );
+        const installed = copiedPackages.get(candidate);
+
+        if (installed === resolvedEntry) return candidate;
+        if (installed) return targetEntry;
+
+        targetEntry = candidate;
+      }
+
+      if (currentFolder === appFolder) return targetEntry;
+
+      currentFolder = path.dirname(currentFolder);
     }
   }
 
@@ -181,11 +234,5 @@ export class DependencyCopier {
       });
 
     copiedPackages.set(targetEntry, resolvedEntry);
-
-    await this.copyDependencies({
-      sourcePackageFolder: resolvedEntry,
-      targetPackageFolder: targetEntry,
-      copiedPackages
-    });
   }
 }

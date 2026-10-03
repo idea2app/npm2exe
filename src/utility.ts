@@ -174,12 +174,16 @@ export interface GitHubRelease {
   assets?: Record<'name' | 'browser_download_url', string>[];
 }
 
+const { GITHUB_TOKEN } = process.env;
+
 export const githubClient = new HTTPClient({
   baseURI: 'https://api.github.com',
   responseType: 'json'
 }).use(({ request }, next) => {
   request.headers['Accept'] ||= 'application/vnd.github.v3+json';
-  request.headers['Authorization'] ||= `Bearer ${process.env.GITHUB_TOKEN}`;
+
+  if (GITHUB_TOKEN)
+    request.headers['Authorization'] ||= `Bearer ${GITHUB_TOKEN}`;
 
   return next();
 });

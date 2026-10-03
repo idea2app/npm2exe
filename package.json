@@ -64,8 +64,8 @@
     "lint": "lint-staged",
     "build": "pkgroll",
     "test-workspace": "tsx --test test/*.test.ts",
-    "test": "npm run build  &&  npm run test-workspace  &&  tsx src/ .  &&  out/npm2exe  &&  ~/npm2exe -h",
-    "test-win": "npm run build  &&  npm run test-workspace  &&  tsx src/ .  &&  out\\npm2exe.exe -y  &&  %USERPROFILE%\\npm2exe -h",
+    "test": "npm run build  &&  npm run test-workspace  &&  tsx src/ .  &&  tsx test/bundle-smoke.ts",
+    "test-win": "npm test",
     "prepublishOnly": "npm run build"
   }
 }

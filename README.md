@@ -29,10 +29,12 @@ Options:
 
 `npm2exe` reads your [`package.json#bin`][9], installs only production dependencies into a temporary staging directory, downloads a matching [stock Node.js runtime][10], then wraps both into a [self-extracting package][10].
 
-Standalone projects and workspace packages use the same dependency copier to export their runtime dependency graph into the app. For packages using `workspace:` dependencies, installation runs at the staged workspace root instead of the standalone project directory. Dependencies hoisted to ancestor `node_modules` directories are included, along with transitive dependencies and linked workspace packages. Missing optional dependencies are skipped; missing required runtime dependencies stop packaging with an error. Temporary installation directories are removed after export.
+Standalone projects and workspace packages use the same dependency copier to export their runtime dependency graph into the app. For packages using `workspace:` dependencies, installation runs at the staged workspace root instead of the standalone project directory. Dependencies hoisted to ancestor `node_modules` directories are included, along with transitive dependencies and linked workspace packages. Export processes dependencies breadth-first and hoists compatible copies within the app, nesting only when installed package identities conflict, to avoid unnecessarily deep archive paths. Missing optional dependencies are skipped; missing required runtime dependencies stop packaging with an error. Temporary installation directories are removed after export.
 
 Run `npm run test-workspace` for the standalone dependency copying and workspace staging regression tests. This includes `test-packages/real-workspace`, whose parent/child packages exercise a real PNPM production install with TypeScript as a third-party dependency. PNPM (or Corepack) and registry access on a cold cache are required; executable packaging and Node.js runtime downloads are not.
 Static test packages live directly under `test-packages`, alongside `real-workspace`; tests copy them into isolated temporary directories and construct installation layouts and links without generating package manifests or entry scripts.
+
+The full `npm test` (also `npm run test-win`) installs the generated bundle into a temporary home/profile and verifies its launcher. Smoke-test output identifies installation and launcher failures separately; the user's existing installation is not overwritten.
 
 ## Compared with Node SEA / pkg / nexe / caxa
 

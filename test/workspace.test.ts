@@ -135,6 +135,53 @@ test('exports standalone dependencies with the shared copier and no source links
     await fs.readFile(path.join(fixtures, 'bin', 'fixture.cmd'), 'utf8')
   );
   await assertUnusedAbsent(appFolder);
+  assert.equal(
+    (
+      await readPackage(
+        path.join(appFolder, 'node_modules', '@fixture', 'transitive')
+      )
+    ).name,
+    '@fixture/transitive'
+  );
+  assert.equal(
+    await fs.pathExists(
+      path.join(
+        appFolder,
+        'node_modules',
+        'fixture-external',
+        'node_modules',
+        '@fixture',
+        'transitive'
+      )
+    ),
+    false
+  );
+});
+
+test('keeps a long dependency chain shallow enough for portable archives', async t => {
+  const { sourceFolder, appFolder } = await createFixture(t, 'long-chain');
+  const modules = path.join(sourceFolder, 'node_modules');
+  const names: string[] = [];
+  for (const entry of await fs.readdir(path.join(sourceFolder, 'packages'))) {
+    const folder = path.join(sourceFolder, 'packages', entry);
+    const { name } = await readPackage(folder);
+    assert.ok(name);
+    names.push(name);
+    await fs.copy(folder, path.join(modules, name));
+  }
+  await fs.remove(path.join(sourceFolder, 'packages'));
+  await new DependencyCopier(copyProjectFiles).copyPackage({
+    sourceFolder,
+    appFolder,
+    sourcePackage: await readPackage(sourceFolder)
+  });
+  await fs.remove(sourceFolder);
+  assertRuns(appFolder, '21');
+  for (const name of names)
+    assert.equal(
+      (await readPackage(path.join(appFolder, 'node_modules', name))).name,
+      name
+    );
 });
 
 test('exports a standalone project without runtime dependencies', async t => {
