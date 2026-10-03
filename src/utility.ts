@@ -78,26 +78,48 @@ export const formatBytes = (size: number): string =>
     ? '0 B'
     : new ByteSize(size).toShortString(size < 1024 ? 0 : 1);
 
-export const logStep =
-  (label: string) =>
-  <This, Args extends unknown[], Return>(
-    method: (this: This, ...args: Args) => Promise<Return>,
-    _context: ClassMethodDecoratorContext<
-      This,
-      (this: This, ...args: Args) => Promise<Return>
-    >
-  ) =>
-    async function (this: This, ...args: Args): Promise<Return> {
-      const title = `[npm2exe] ${label}`;
+type AsyncMethod<This, Args extends unknown[], Return> = (
+  this: This,
+  ...args: Args
+) => Promise<Return>;
+
+type AsyncMethodDecorator = <This, Args extends unknown[], Return>(
+  method: AsyncMethod<This, Args, Return>,
+  context: ClassMethodDecoratorContext<This, AsyncMethod<This, Args, Return>>
+) => AsyncMethod<This, Args, Return>;
+
+export function logStep(label: string): AsyncMethodDecorator;
+export function logStep<This, Args extends unknown[]>(
+  label: (that: This, ...parameters: Args) => string
+): <Return>(
+  method: AsyncMethod<This, Args, Return>,
+  context: ClassMethodDecoratorContext<This, AsyncMethod<This, Args, Return>>
+) => AsyncMethod<This, Args, Return>;
+export function logStep(label: unknown) {
+  return function <This, Args extends unknown[], Return>(
+    method: AsyncMethod<This, Args, Return>,
+    _context: ClassMethodDecoratorContext<This, AsyncMethod<This, Args, Return>>
+  ) {
+    return async function (this: This, ...parameters: Args): Promise<Return> {
+      const description =
+        typeof label === 'string'
+          ? label
+          : (label as (that: This, ...parameters: Args) => string)(
+              this,
+              ...parameters
+            );
+      const title = `[npm2exe] ${description}`;
 
       console.info(`\n${title}\n`);
       console.time(title);
       try {
-        return await method.apply(this, args);
+        return await method.apply(this, parameters);
       } finally {
         console.timeEnd(title);
       }
     };
+  };
+}
 
 export async function createIgnorePatterns(sourceFolder: string) {
   const gitIgnorePath = path.join(sourceFolder, '.gitignore');
@@ -152,12 +174,16 @@ export interface GitHubRelease {
   assets?: Record<'name' | 'browser_download_url', string>[];
 }
 
+const { GITHUB_TOKEN } = process.env;
+
 export const githubClient = new HTTPClient({
   baseURI: 'https://api.github.com',
   responseType: 'json'
 }).use(({ request }, next) => {
   request.headers['Accept'] ||= 'application/vnd.github.v3+json';
-  request.headers['Authorization'] ||= `Bearer ${process.env.GITHUB_TOKEN}`;
+
+  if (GITHUB_TOKEN)
+    request.headers['Authorization'] ||= `Bearer ${GITHUB_TOKEN}`;
 
   return next();
 });

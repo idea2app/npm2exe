@@ -1,0 +1,14 @@
+{
+  "name": "@fixture/transitive",
+  "main": "index.cjs",
+  "peerDependencies": {
+    "fixture-external": "*",
+    "fixture-optional-peer": "*",
+    "fixture-uninstalled-peer": "*"
+  },
+  "peerDependenciesMeta": {
+    "fixture-optional-peer": {
+      "optional": true
+    }
+  }
+}
