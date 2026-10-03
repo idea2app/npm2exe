@@ -118,8 +118,10 @@ export class DependencyCopier {
               undefined ||
             (sourcePackage.dependencies?.[dependencyName] === undefined &&
               sourcePackage.peerDependenciesMeta?.[dependencyName]?.optional);
+          const peerDependency =
+            sourcePackage.peerDependencies?.[dependencyName] !== undefined;
 
-          if (!optional)
+          if (!optional && !peerDependency)
             throw new Error(
               `Cannot find runtime dependency "${dependencyName}" from "${sourcePackageFolder}"`
             );

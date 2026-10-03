@@ -206,7 +206,7 @@ test('copies isolated external symlinks and resolves their store dependencies', 
   assertRuns(appFolder, '42');
 });
 
-test('terminates cyclic runtime dependency graphs', async t => {
+test('terminates cyclic dependency graphs with unresolved peer dependencies', async t => {
   const { appFolder } = await stageFixture(t, async folder => {
     await installHoisted(folder);
     await copyFixture(

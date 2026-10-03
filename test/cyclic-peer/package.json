@@ -3,7 +3,8 @@
   "main": "index.cjs",
   "peerDependencies": {
     "fixture-external": "*",
-    "fixture-optional-peer": "*"
+    "fixture-optional-peer": "*",
+    "fixture-uninstalled-peer": "*"
   },
   "peerDependenciesMeta": {
     "fixture-optional-peer": {

@@ -235,7 +235,13 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     return outputFile;
   }
 
-  @logStep('copy project files')
+  @logStep(
+    (
+      _that: ProjectPackager,
+      { sourceFolder, appFolder }: ProjectFilesCopyInput
+    ) =>
+      `copy project files: ${path.basename(sourceFolder)} -> ${path.basename(appFolder)}`
+  )
   private async copyProjectFiles({
     sourceFolder,
     appFolder,
