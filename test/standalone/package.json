@@ -1,0 +1,6 @@
+{
+  "name": "standalone",
+  "dependencies": {
+    "fixture-external": "*"
+  }
+}
