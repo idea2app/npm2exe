@@ -193,7 +193,7 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       await fs.chmod(scriptPath, 0o755);
     }
 
-    if (platform !== 'win') await this.createInstallScript();
+    await this.createInstallScript();
   }
 
   @logStep('package bundle')
@@ -214,18 +214,23 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     );
     const archiveRoot = path.resolve(tempRoot, '../..');
 
+    const installScriptPath = path.join(
+      path.dirname(appFolder),
+      `install.${platform === 'win' ? 'cmd' : 'sh'}`
+    );
+
     if (platform === 'win')
       await this.platformPackager.packageWith7Zip({
         tempRoot: archiveRoot,
         outputFile,
+        installScript: toWindowsPath(
+          path.relative(archiveRoot, installScriptPath)
+        ),
         compressionLevel
       });
     else {
       const installScript = `./${toPosixPath(
-        path.relative(
-          archiveRoot,
-          path.join(path.dirname(appFolder), 'install.sh')
-        )
+        path.relative(archiveRoot, installScriptPath)
       )}`;
 
       await this.platformPackager.packageWithMakeself({
@@ -296,14 +301,44 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
   }
 
   private async createInstallScript() {
-    const { appFolder, nodePath } = this.context;
+    const { appFolder, nodePath, platform, tempRoot } = this.context;
     if (!nodePath)
       throw new Error(
         'Node runtime must be installed before creating the install script'
       );
 
     const scriptRoot = path.dirname(appFolder);
-    const scriptPath = path.join(scriptRoot, 'install.sh');
+    const extension = platform === 'win' ? 'cmd' : 'sh';
+    const scriptPath = path.join(scriptRoot, `install.${extension}`);
+    const archiveRoot = path.resolve(tempRoot, '../..');
+
+    if (platform === 'win') {
+      const archiveRelativePath = toWindowsPath(
+        path.relative(scriptRoot, archiveRoot)
+      );
+      const appRelativePath = toWindowsPath(
+        path.relative(archiveRoot, appFolder)
+      );
+      const runtimeRelativePath = toWindowsPath(
+        path.relative(archiveRoot, path.dirname(nodePath))
+      );
+
+      await fs.outputFile(
+        scriptPath,
+        `@echo off
+robocopy "%~dp0${archiveRelativePath}" "%USERPROFILE%" /E /XF install.cmd /NFL /NDL /NJH /NJS
+if %ERRORLEVEL% GEQ 8 exit /b %ERRORLEVEL%
+echo Package extracted to %USERPROFILE%
+set "PATH=%USERPROFILE%\\${runtimeRelativePath};%PATH%"
+cd /d "%USERPROFILE%\\${appRelativePath}"
+call npm run install --if-present
+if errorlevel 1 exit /b %ERRORLEVEL%
+exit /b 0
+`.replace(/\n/g, '\r\n')
+      );
+      return;
+    }
+
     const runtimeBin = toPosixPath(
       path.relative(scriptRoot, path.dirname(nodePath))
     );

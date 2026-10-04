@@ -143,25 +143,18 @@ export class PlatformPackager {
   async packageWith7Zip({
     tempRoot,
     outputFile,
+    installScript,
     compressionLevel = 0
   }: {
     tempRoot: string;
     outputFile: string;
+    installScript: string;
     compressionLevel?: number;
   }) {
     const { path7z } = await import('7zip-bin-full');
     const sfxPath = await this.installSFXModule();
     const archivePath = path.join(os.tmpdir(), 'npm2exe-archive.7z');
 
-    await fs.outputFile(
-      path.join(tempRoot, 'install.cmd'),
-      `@echo off
-robocopy "%~dp0." "%USERPROFILE%" /E /XF install.cmd /NFL /NDL /NJH /NJS
-if %ERRORLEVEL% GEQ 8 exit /b %ERRORLEVEL%
-echo Package extracted to %USERPROFILE%
-exit /b 0
-`.replace(/\n/g, '\r\n')
-    );
     await fs.remove(archivePath);
     await $({
       cwd: tempRoot
@@ -170,7 +163,7 @@ exit /b 0
     const config = `;!@Install@!UTF-8!
 Title="${path.basename(outputFile, '.exe')}"
 Directory=""
-RunProgram="cmd.exe /c install.cmd"
+RunProgram="cmd.exe /c ${installScript}"
 ;!@InstallEnd@!
 `;
     async function* mergeStreams() {
