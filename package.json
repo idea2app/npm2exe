@@ -65,7 +65,6 @@
     "build": "pkgroll",
     "test-workspace": "tsx --test test/*.test.ts",
     "test": "npm run build  &&  npm run test-workspace  &&  tsx src/ .  &&  tsx test/bundle-smoke.ts",
-    "test-win": "npm test",
     "prepublishOnly": "npm run build"
   }
 }

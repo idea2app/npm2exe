@@ -11,7 +11,7 @@ export async function downloadFile(
   targetPath: string,
   label = url
 ) {
-  const progressRenderer = new ProgressRenderer(label);
+  await using progressRenderer = new ProgressRenderer(label);
 
   await fs.ensureDir(path.dirname(targetPath));
 
@@ -38,6 +38,5 @@ export async function downloadFile(
     throw error;
   } finally {
     await fileHandle.close();
-    progressRenderer.close();
   }
 }

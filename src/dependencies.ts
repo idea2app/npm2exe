@@ -47,8 +47,7 @@ export class DependencyCopier {
     });
 
     // Export each level before its children so direct dependencies reserve their slots.
-    for (let index = 0; index < queue.length; index++)
-      await this.copyDependencies(queue[index]);
+    for (const dependency of queue) await this.copyDependencies(dependency);
   }
 
   private async findInstalledDependency(
@@ -110,62 +109,57 @@ export class DependencyCopier {
         Object.keys(sourcePackage[field] || {})
       )
     );
-    const progressRenderer = new ProgressRenderer(
+    await using progressRenderer = new ProgressRenderer(
       'Copying runtime dependencies',
       'items'
     );
     let copied = 0;
 
-    try {
-      for (const dependencyName of dependencyNames) {
-        const sourceEntry = await this.findInstalledDependency(
-          sourcePackageFolder,
-          dependencyName
+    for (const dependencyName of dependencyNames) {
+      const sourceEntry = await this.findInstalledDependency(
+        sourcePackageFolder,
+        dependencyName
+      );
+
+      if (!sourceEntry) {
+        const optional =
+          sourcePackage.optionalDependencies?.[dependencyName] !== undefined ||
+          (sourcePackage.dependencies?.[dependencyName] === undefined &&
+            sourcePackage.peerDependenciesMeta?.[dependencyName]?.optional);
+        const peerDependency =
+          sourcePackage.peerDependencies?.[dependencyName] !== undefined;
+
+        if (!optional && !peerDependency)
+          throw new Error(
+            `Cannot find runtime dependency "${dependencyName}" from "${sourcePackageFolder}"`
+          );
+      } else {
+        const resolvedEntry = await fs.realpath(sourceEntry);
+        const targetEntry = this.findTargetEntry(
+          targetPackageFolder,
+          appFolder,
+          dependencyName,
+          resolvedEntry,
+          copiedPackages
         );
 
-        if (!sourceEntry) {
-          const optional =
-            sourcePackage.optionalDependencies?.[dependencyName] !==
-              undefined ||
-            (sourcePackage.dependencies?.[dependencyName] === undefined &&
-              sourcePackage.peerDependenciesMeta?.[dependencyName]?.optional);
-          const peerDependency =
-            sourcePackage.peerDependencies?.[dependencyName] !== undefined;
-
-          if (!optional && !peerDependency)
-            throw new Error(
-              `Cannot find runtime dependency "${dependencyName}" from "${sourcePackageFolder}"`
-            );
-        } else {
-          const resolvedEntry = await fs.realpath(sourceEntry);
-          const targetEntry = this.findTargetEntry(
-            targetPackageFolder,
-            appFolder,
-            dependencyName,
-            resolvedEntry,
+        if (copiedPackages.get(targetEntry) !== resolvedEntry) {
+          await this.copyInstalledEntry(
+            sourceEntry,
+            targetEntry,
             copiedPackages
           );
-
-          if (copiedPackages.get(targetEntry) !== resolvedEntry) {
-            await this.copyInstalledEntry(
-              sourceEntry,
-              targetEntry,
-              copiedPackages
-            );
-            queue.push({
-              sourcePackageFolder: resolvedEntry,
-              targetPackageFolder: targetEntry,
-              appFolder,
-              copiedPackages,
-              queue
-            });
-          }
+          queue.push({
+            sourcePackageFolder: resolvedEntry,
+            targetPackageFolder: targetEntry,
+            appFolder,
+            copiedPackages,
+            queue
+          });
         }
-
-        progressRenderer.update(++copied, dependencyNames.size);
       }
-    } finally {
-      progressRenderer.close();
+
+      progressRenderer.update(++copied, dependencyNames.size);
     }
   }
 

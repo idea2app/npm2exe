@@ -192,8 +192,6 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       );
       await fs.chmod(scriptPath, 0o755);
     }
-
-    await this.createInstallScript();
   }
 
   @logStep('package bundle')
@@ -204,7 +202,6 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       outputFolder,
       platform,
       tempRoot,
-      appFolder,
       compressionLevel
     } = this.context;
     const outputBaseName = outputName || packageBaseName;
@@ -214,10 +211,7 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     );
     const archiveRoot = path.resolve(tempRoot, '../..');
 
-    const installScriptPath = path.join(
-      path.dirname(appFolder),
-      `install.${platform === 'win' ? 'cmd' : 'sh'}`
-    );
+    const installScriptPath = await this.createInstallScript();
 
     if (platform === 'win')
       await this.platformPackager.packageWith7Zip({
@@ -279,24 +273,20 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     }))
       entries.add(item);
 
-    const progressRenderer = new ProgressRenderer(
+    await using progressRenderer = new ProgressRenderer(
       'Copying project files',
       'items'
     );
     let copied = 0;
 
-    try {
-      for (const relativePath of entries) {
-        const sourcePath = path.join(sourceFolder, relativePath);
+    for (const relativePath of entries) {
+      const sourcePath = path.join(sourceFolder, relativePath);
 
-        if (await fs.pathExists(sourcePath)) {
-          await fs.copy(sourcePath, path.join(appFolder, relativePath));
+      if (await fs.pathExists(sourcePath)) {
+        await fs.copy(sourcePath, path.join(appFolder, relativePath));
 
-          progressRenderer.update(++copied, entries.size);
-        }
+        progressRenderer.update(++copied, entries.size);
       }
-    } finally {
-      progressRenderer.close();
     }
   }
 
@@ -336,7 +326,7 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 exit /b 0
 `.replace(/\n/g, '\r\n')
       );
-      return;
+      return scriptPath;
     }
 
     const runtimeBin = toPosixPath(
@@ -355,6 +345,7 @@ npm run install --if-present
 `
     );
     await fs.chmod(scriptPath, 0o755);
+    return scriptPath;
   }
 }
 

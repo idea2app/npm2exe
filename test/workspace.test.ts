@@ -63,19 +63,18 @@ function assertRuns(appFolder: string, expected: string) {
     process.execPath,
     [path.join(appFolder, 'index.cjs')],
     {
-      encoding: 'utf8'
+      encoding: 'utf-8'
     }
   );
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), expected);
 }
 
-async function assertUnusedAbsent(appFolder: string) {
-  await assert.rejects(
+const assertUnusedAbsent = (appFolder: string) =>
+  assert.rejects(
     readPackage(path.join(appFolder, 'node_modules', 'fixture-unused')),
     { code: 'ENOENT' }
   );
-}
 
 async function installExternal(modules: string) {
   await copyFixture('external', path.join(modules, 'fixture-external'));
@@ -135,33 +134,26 @@ test('exports standalone dependencies with the shared copier and no source links
     await fs.readFile(path.join(fixtures, 'bin', 'fixture.cmd'), 'utf8')
   );
   await assertUnusedAbsent(appFolder);
-  assert.equal(
-    (
-      await readPackage(
-        path.join(appFolder, 'node_modules', '@fixture', 'transitive')
-      )
-    ).name,
-    '@fixture/transitive'
+  const { name: transitivePackageName } = await readPackage(
+    path.join(appFolder, 'node_modules', '@fixture', 'transitive')
   );
-  assert.equal(
-    await fs.pathExists(
-      path.join(
-        appFolder,
-        'node_modules',
-        'fixture-external',
-        'node_modules',
-        '@fixture',
-        'transitive'
-      )
-    ),
-    false
+  assert.equal(transitivePackageName, '@fixture/transitive');
+  const nestedTransitivePackageFolder = path.join(
+    appFolder,
+    'node_modules',
+    'fixture-external',
+    'node_modules',
+    '@fixture',
+    'transitive'
   );
+  assert.equal(await fs.pathExists(nestedTransitivePackageFolder), false);
 });
 
 test('keeps a long dependency chain shallow enough for portable archives', async t => {
   const { sourceFolder, appFolder } = await createFixture(t, 'long-chain');
   const modules = path.join(sourceFolder, 'node_modules');
   const names: string[] = [];
+
   for (const entry of await fs.readdir(path.join(sourceFolder, 'packages'))) {
     const folder = path.join(sourceFolder, 'packages', entry);
     const { name } = await readPackage(folder);
@@ -176,7 +168,9 @@ test('keeps a long dependency chain shallow enough for portable archives', async
     sourcePackage: await readPackage(sourceFolder)
   });
   await fs.remove(sourceFolder);
+
   assertRuns(appFolder, '21');
+
   for (const name of names)
     assert.equal(
       (await readPackage(path.join(appFolder, 'node_modules', name))).name,
@@ -221,11 +215,17 @@ test('stages local workspace links and external hoisted dependencies', async t =
 });
 
 test('preserves nested dependency versions instead of reusing a different hoisted version', async t => {
-  const { appFolder } = await stageFixture(t, async folder => {
-    await installHoisted(folder);
+  const { appFolder } = await stageFixture(t, async workspaceFolder => {
+    await installHoisted(workspaceFolder);
     await copyFixture(
       'external-v2',
-      path.join(folder, 'packages', 'lib', 'node_modules', 'fixture-external')
+      path.join(
+        workspaceFolder,
+        'packages',
+        'lib',
+        'node_modules',
+        'fixture-external'
+      )
     );
   });
   assertRuns(appFolder, '43');

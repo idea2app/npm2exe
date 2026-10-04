@@ -120,25 +120,21 @@ export class WorkspaceStager {
       followSymbolicLinks: false,
       ignore: await createIgnorePatterns(sourceFolder)
     });
-    const progressRenderer = new ProgressRenderer(
+    await using progressRenderer = new ProgressRenderer(
       'Copying workspace files',
       'items'
     );
     let copied = 0;
 
-    try {
-      for (const relativePath of relativePaths) {
-        const sourcePath = path.join(sourceFolder, relativePath);
-        const stats = await fs.lstat(sourcePath);
-        const targetPath = path.join(targetFolder, relativePath);
+    for (const relativePath of relativePaths) {
+      const sourcePath = path.join(sourceFolder, relativePath);
+      const stats = await fs.lstat(sourcePath);
+      const targetPath = path.join(targetFolder, relativePath);
 
-        if (stats.isDirectory()) await fs.ensureDir(targetPath);
-        else await fs.copy(sourcePath, targetPath);
+      if (stats.isDirectory()) await fs.ensureDir(targetPath);
+      else await fs.copy(sourcePath, targetPath);
 
-        progressRenderer.update(++copied, relativePaths.length);
-      }
-    } finally {
-      progressRenderer.close();
+      progressRenderer.update(++copied, relativePaths.length);
     }
   }
 }
