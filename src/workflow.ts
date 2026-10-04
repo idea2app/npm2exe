@@ -204,6 +204,7 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       outputFolder,
       platform,
       tempRoot,
+      appFolder,
       compressionLevel
     } = this.context;
     const outputBaseName = outputName || packageBaseName;
@@ -221,7 +222,10 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       });
     else {
       const installScript = `./${toPosixPath(
-        path.relative(archiveRoot, path.join(tempRoot, 'install.sh'))
+        path.relative(
+          archiveRoot,
+          path.join(path.dirname(appFolder), 'install.sh')
+        )
       )}`;
 
       await this.platformPackager.packageWithMakeself({
@@ -292,14 +296,27 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
   }
 
   private async createInstallScript() {
-    const { tempRoot } = this.context;
-    const scriptPath = path.join(tempRoot, 'install.sh');
+    const { appFolder, nodePath } = this.context;
+    if (!nodePath)
+      throw new Error(
+        'Node runtime must be installed before creating the install script'
+      );
+
+    const scriptRoot = path.dirname(appFolder);
+    const scriptPath = path.join(scriptRoot, 'install.sh');
+    const runtimeBin = toPosixPath(
+      path.relative(scriptRoot, path.dirname(nodePath))
+    );
 
     await fs.outputFile(
       scriptPath,
       `#!/bin/sh
 set -e
 printf "Package extracted to %s\\n" "$(pwd)"
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+export PATH="$ROOT_DIR/${runtimeBin}:$PATH"
+cd "$ROOT_DIR/app"
+npm run install --if-present
 `
     );
     await fs.chmod(scriptPath, 0o755);
