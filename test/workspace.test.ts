@@ -48,9 +48,9 @@ const copyProjectFiles: ProjectFilesCopier = ({
     }
   });
 
-async function createFixture({ after }: TestContext, name: string) {
+async function createFixture(context: TestContext, name: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'npm2exe-fixture-'));
-  after(() => fs.remove(root));
+  context.after(() => fs.remove(root));
 
   const sourceFolder = path.join(root, 'source');
   const appFolder = path.join(root, 'output');
@@ -303,13 +303,11 @@ test('leaves packages without workspace protocols on the standalone staging path
   );
 });
 
-test('exports a real pnpm workspace with a third-party dependency', async ({
-  after
-}) => {
+test('exports a real pnpm workspace with a third-party dependency', async context => {
   const root = await fs.mkdtemp(
     path.join(os.tmpdir(), 'npm2exe-real-workspace-')
   );
-  after(() => fs.remove(root));
+  context.after(() => fs.remove(root));
 
   const workspaceFolder = path.join(root, 'workspace');
   const appFolder = path.join(root, 'app');
