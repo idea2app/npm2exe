@@ -15,12 +15,13 @@ export async function downloadFile(
 
   await fs.ensureDir(path.dirname(targetPath));
 
-  const fileHandle = await open(targetPath, 'w');
   let loaded = 0;
   let total = 0;
   let position = 0;
 
   try {
+    await using fileHandle = await open(targetPath, 'w');
+
     for await (const progress of downloadClient.download(url)) {
       loaded = progress.loaded || loaded;
       total = progress.total || total;
@@ -36,7 +37,5 @@ export async function downloadFile(
     await fs.remove(targetPath);
 
     throw error;
-  } finally {
-    await fileHandle.close();
   }
 }

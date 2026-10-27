@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { fs } from 'zx';
+import { fs, path } from 'zx';
 import type { PackageJson } from 'type-fest';
 import { ProgressRenderer } from './progress.js';
 import { logStep } from './utility.js';

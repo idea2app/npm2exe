@@ -38,22 +38,23 @@ const copyProjectFiles: ProjectFilesCopier = ({
       const relativePath = path.relative(sourceFolder, source);
       const entry = relativePath.split(path.sep)[0];
 
-      if (entry === 'node_modules') return false;
-
       return (
-        !relativePath ||
-        entry === 'package.json' ||
-        !sourcePackage.files?.length ||
-        sourcePackage.files.includes(entry)
+        entry !== 'node_modules' &&
+        (!relativePath ||
+          entry === 'package.json' ||
+          !sourcePackage.files?.length ||
+          sourcePackage.files.includes(entry))
       );
     }
   });
 
-async function createFixture(t: TestContext, name: string) {
+async function createFixture({ after }: TestContext, name: string) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'npm2exe-fixture-'));
-  t.after(() => fs.remove(root));
+  after(() => fs.remove(root));
+
   const sourceFolder = path.join(root, 'source');
   const appFolder = path.join(root, 'output');
+
   await copyFixture(name, sourceFolder);
   return { root, sourceFolder, appFolder };
 }
@@ -62,9 +63,7 @@ function assertRuns(appFolder: string, expected: string) {
   const result = spawnSync(
     process.execPath,
     [path.join(appFolder, 'index.cjs')],
-    {
-      encoding: 'utf-8'
-    }
+    { encoding: 'utf-8' }
   );
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.trim(), expected);
@@ -93,20 +92,22 @@ async function linkWorkspace(folder: string, modules: string) {
 
 async function installHoisted(folder: string) {
   const modules = path.join(folder, 'node_modules');
+
   await installExternal(modules);
   await linkWorkspace(folder, modules);
 }
 
 async function stageFixture(
-  t: TestContext,
+  context: TestContext,
   install: (folder: string) => Promise<unknown> = installHoisted
 ) {
   const { sourceFolder: workspaceFolder, appFolder } = await createFixture(
-    t,
+    context,
     'workspace'
   );
   const sourceFolder = path.join(workspaceFolder, 'packages', 'app');
   const sourcePackage = await readPackage(sourceFolder);
+
   await new WorkspaceStager(copyProjectFiles, install).stagePackage({
     sourceFolder,
     appFolder,
@@ -115,16 +116,21 @@ async function stageFixture(
   return { workspaceFolder, appFolder };
 }
 
-test('exports standalone dependencies with the shared copier and no source links', async t => {
-  const { sourceFolder, appFolder } = await createFixture(t, 'standalone');
+test('exports standalone dependencies with the shared copier and no source links', async context => {
+  const { sourceFolder, appFolder } = await createFixture(
+    context,
+    'standalone'
+  );
   await installExternal(path.join(sourceFolder, 'node_modules'));
   await copyFixture('bin', path.join(sourceFolder, 'node_modules', '.bin'));
+
   await new DependencyCopier(copyProjectFiles).copyPackage({
     sourceFolder,
     appFolder,
     sourcePackage: await readPackage(sourceFolder)
   });
   await fs.remove(sourceFolder);
+
   assertRuns(appFolder, '21');
   assert.equal(
     await fs.readFile(
@@ -134,10 +140,12 @@ test('exports standalone dependencies with the shared copier and no source links
     await fs.readFile(path.join(fixtures, 'bin', 'fixture.cmd'), 'utf8')
   );
   await assertUnusedAbsent(appFolder);
+
   const { name: transitivePackageName } = await readPackage(
     path.join(appFolder, 'node_modules', '@fixture', 'transitive')
   );
   assert.equal(transitivePackageName, '@fixture/transitive');
+
   const nestedTransitivePackageFolder = path.join(
     appFolder,
     'node_modules',
@@ -149,19 +157,24 @@ test('exports standalone dependencies with the shared copier and no source links
   assert.equal(await fs.pathExists(nestedTransitivePackageFolder), false);
 });
 
-test('keeps a long dependency chain shallow enough for portable archives', async t => {
-  const { sourceFolder, appFolder } = await createFixture(t, 'long-chain');
+test('keeps a long dependency chain shallow enough for portable archives', async context => {
+  const { sourceFolder, appFolder } = await createFixture(
+    context,
+    'long-chain'
+  );
   const modules = path.join(sourceFolder, 'node_modules');
   const names: string[] = [];
 
   for (const entry of await fs.readdir(path.join(sourceFolder, 'packages'))) {
     const folder = path.join(sourceFolder, 'packages', entry);
     const { name } = await readPackage(folder);
+
     assert.ok(name);
     names.push(name);
     await fs.copy(folder, path.join(modules, name));
   }
   await fs.remove(path.join(sourceFolder, 'packages'));
+
   await new DependencyCopier(copyProjectFiles).copyPackage({
     sourceFolder,
     appFolder,
@@ -171,15 +184,17 @@ test('keeps a long dependency chain shallow enough for portable archives', async
 
   assertRuns(appFolder, '21');
 
-  for (const name of names)
-    assert.equal(
-      (await readPackage(path.join(appFolder, 'node_modules', name))).name,
-      name
+  for (const name of names) {
+    const { name: packageName } = await readPackage(
+      path.join(appFolder, 'node_modules', name)
     );
+    assert.equal(packageName, name);
+  }
 });
 
-test('exports a standalone project without runtime dependencies', async t => {
-  const { sourceFolder, appFolder } = await createFixture(t, 'empty');
+test('exports a standalone project without runtime dependencies', async context => {
+  const { sourceFolder, appFolder } = await createFixture(context, 'empty');
+
   await new DependencyCopier(copyProjectFiles).copyPackage({
     sourceFolder,
     appFolder,
@@ -189,33 +204,30 @@ test('exports a standalone project without runtime dependencies', async t => {
   assertRuns(appFolder, '42');
 });
 
-test('stages hoisted external and transitive dependencies without local node_modules', async t => {
-  const { workspaceFolder, appFolder } = await stageFixture(t);
+test('stages hoisted external and transitive dependencies without local node_modules', async context => {
+  const { workspaceFolder, appFolder } = await stageFixture(context);
   await fs.remove(workspaceFolder);
+
   assertRuns(appFolder, '42');
   await assertUnusedAbsent(appFolder);
 });
 
-test('stages local workspace links and external hoisted dependencies', async t => {
-  const { appFolder } = await stageFixture(t, async folder => {
+test('stages local workspace links and external hoisted dependencies', async context => {
+  const { appFolder } = await stageFixture(context, async folder => {
     await installHoisted(folder);
     await linkWorkspace(
       folder,
       path.join(folder, 'packages', 'app', 'node_modules')
     );
   });
-  assert.equal(
-    (
-      await readPackage(
-        path.join(appFolder, 'node_modules', 'fixture-external')
-      )
-    ).name,
-    'fixture-external'
+  const { name: externalPackageName } = await readPackage(
+    path.join(appFolder, 'node_modules', 'fixture-external')
   );
+  assert.equal(externalPackageName, 'fixture-external');
 });
 
-test('preserves nested dependency versions instead of reusing a different hoisted version', async t => {
-  const { appFolder } = await stageFixture(t, async workspaceFolder => {
+test('preserves nested dependency versions instead of reusing a different hoisted version', async context => {
+  const { appFolder } = await stageFixture(context, async workspaceFolder => {
     await installHoisted(workspaceFolder);
     await copyFixture(
       'external-v2',
@@ -231,9 +243,10 @@ test('preserves nested dependency versions instead of reusing a different hoiste
   assertRuns(appFolder, '43');
 });
 
-test('copies isolated external symlinks and resolves their store dependencies', async t => {
-  const { appFolder } = await stageFixture(t, async folder => {
+test('copies isolated external symlinks and resolves their store dependencies', async context => {
+  const { appFolder } = await stageFixture(context, async folder => {
     await installHoisted(folder);
+
     const store = path.join(
       folder,
       'node_modules',
@@ -242,6 +255,7 @@ test('copies isolated external symlinks and resolves their store dependencies', 
       'node_modules'
     );
     await installExternal(store);
+
     const modules = path.join(folder, 'packages', 'app', 'node_modules');
     await fs.ensureDir(modules);
     await fs.symlink(
@@ -253,8 +267,8 @@ test('copies isolated external symlinks and resolves their store dependencies', 
   assertRuns(appFolder, '42');
 });
 
-test('terminates cyclic dependency graphs with unresolved peer dependencies', async t => {
-  const { appFolder } = await stageFixture(t, async folder => {
+test('terminates cyclic dependency graphs with unresolved peer dependencies', async context => {
+  const { appFolder } = await stageFixture(context, async folder => {
     await installHoisted(folder);
     await copyFixture(
       'cyclic-peer',
@@ -264,9 +278,9 @@ test('terminates cyclic dependency graphs with unresolved peer dependencies', as
   assertRuns(appFolder, '42');
 });
 
-test('reports missing required runtime dependencies', async t => {
+test('reports missing required runtime dependencies', async context => {
   await assert.rejects(
-    stageFixture(t, async folder => {
+    stageFixture(context, async folder => {
       await installHoisted(folder);
       await fs.remove(path.join(folder, 'node_modules', 'fixture-external'));
     }),
@@ -289,11 +303,14 @@ test('leaves packages without workspace protocols on the standalone staging path
   );
 });
 
-test('exports a real pnpm workspace with a third-party dependency', async t => {
+test('exports a real pnpm workspace with a third-party dependency', async ({
+  after
+}) => {
   const root = await fs.mkdtemp(
     path.join(os.tmpdir(), 'npm2exe-real-workspace-')
   );
-  t.after(() => fs.remove(root));
+  after(() => fs.remove(root));
+
   const workspaceFolder = path.join(root, 'workspace');
   const appFolder = path.join(root, 'app');
   await fs.copy(
@@ -306,6 +323,7 @@ test('exports a real pnpm workspace with a third-party dependency', async t => {
   );
   const sourceFolder = path.join(workspaceFolder, 'child');
   const platformPackager = new PlatformPackager();
+
   await new WorkspaceStager(copyProjectFiles, folder =>
     platformPackager.installProductionDependencies(folder)
   ).stagePackage({
@@ -314,6 +332,7 @@ test('exports a real pnpm workspace with a third-party dependency', async t => {
     sourcePackage: await readPackage(sourceFolder)
   });
   await fs.remove(workspaceFolder);
+
   const result = spawnSync(
     process.execPath,
     [path.join(appFolder, 'index.js')],
@@ -325,6 +344,7 @@ test('exports a real pnpm workspace with a third-party dependency', async t => {
   );
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /child: parent/);
+
   const typescript = await readPackage(
     path.join(appFolder, 'node_modules', 'typescript')
   );
