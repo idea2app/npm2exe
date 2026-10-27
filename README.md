@@ -43,7 +43,6 @@ npm run bundle
 - `--output <name>` output bundle file name (default package name; Windows appends `.exe`)
 - `--compression-level <0-9>` compression level (default `0`, no compression; higher levels trade speed for a smaller archive)
 - `--verbose` or `-V` enable Verbose output
--
 
 `npm2exe` reads your [`package.json#bin`][9], installs only production dependencies into a temporary staging directory, downloads a matching [stock Node.js runtime][10], then wraps both into a [self-extracting package][10].
 
