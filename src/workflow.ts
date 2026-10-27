@@ -14,7 +14,11 @@ import {
   type TargetPlatform
 } from './utility.js';
 import { ProgressRenderer } from './progress.js';
-import { WorkspaceStager, type ProjectFilesCopyInput } from './workspace.js';
+import { WorkspaceStager } from './workspace.js';
+import {
+  DependencyCopier,
+  type ProjectFilesCopyInput
+} from './dependencies.js';
 
 interface PackProjectInput {
   projectFolder?: string;
@@ -43,9 +47,13 @@ interface ProjectPackagerContext {
 }
 
 class ProjectPackager {
+  private readonly dependencyCopier = new DependencyCopier(input =>
+    this.copyProjectFiles(input)
+  );
   private readonly workspaceStager = new WorkspaceStager(
     input => this.copyProjectFiles(input),
-    appFolder => this.platformPackager.installProductionDependencies(appFolder)
+    appFolder => this.platformPackager.installProductionDependencies(appFolder),
+    this.dependencyCopier
   );
 
   constructor(
@@ -73,7 +81,7 @@ class ProjectPackager {
 
   @logStep('stage application files')
   async stageApplication() {
-    const { sourceFolder, sourcePackage, appFolder } = this.context;
+    const { sourceFolder, sourcePackage, appFolder, tempRoot } = this.context;
 
     const stagedWorkspacePackage = await this.workspaceStager.stagePackage({
       sourceFolder,
@@ -82,11 +90,26 @@ class ProjectPackager {
     });
 
     if (!stagedWorkspacePackage) {
-      await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
+      const stagedPackageFolder = path.join(tempRoot, 'project');
 
-      await this.platformPackager.installProductionDependencies(appFolder);
-
-      await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
+      try {
+        await this.copyProjectFiles({
+          sourceFolder,
+          appFolder: stagedPackageFolder,
+          sourcePackage
+        });
+        await this.platformPackager.installProductionDependencies(
+          stagedPackageFolder
+        );
+        await this.dependencyCopier.copyPackage({
+          sourceFolder: stagedPackageFolder,
+          appFolder,
+          sourcePackage
+        });
+        await this.copyProjectFiles({ sourceFolder, appFolder, sourcePackage });
+      } finally {
+        await fs.remove(stagedPackageFolder);
+      }
     }
   }
 
@@ -169,8 +192,6 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
       );
       await fs.chmod(scriptPath, 0o755);
     }
-
-    if (platform !== 'win') await this.createInstallScript();
   }
 
   @logStep('package bundle')
@@ -190,15 +211,20 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     );
     const archiveRoot = path.resolve(tempRoot, '../..');
 
+    const installScriptPath = await this.createInstallScript();
+
     if (platform === 'win')
       await this.platformPackager.packageWith7Zip({
         tempRoot: archiveRoot,
         outputFile,
+        installScript: toWindowsPath(
+          path.relative(archiveRoot, installScriptPath)
+        ),
         compressionLevel
       });
     else {
       const installScript = `./${toPosixPath(
-        path.relative(archiveRoot, path.join(tempRoot, 'install.sh'))
+        path.relative(archiveRoot, installScriptPath)
       )}`;
 
       await this.platformPackager.packageWithMakeself({
@@ -212,7 +238,13 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     return outputFile;
   }
 
-  @logStep('copy project files')
+  @logStep(
+    (
+      _that: ProjectPackager,
+      { sourceFolder, appFolder }: ProjectFilesCopyInput
+    ) =>
+      `copy project files: ${path.basename(sourceFolder)} -> ${path.basename(appFolder)}`
+  )
   private async copyProjectFiles({
     sourceFolder,
     appFolder,
@@ -241,39 +273,79 @@ exec "$ROOT_DIR/${toPosixPath(nodeRelativePath)}" "$ROOT_DIR/${toPosixPath(targe
     }))
       entries.add(item);
 
-    const progressRenderer = new ProgressRenderer(
+    await using progressRenderer = new ProgressRenderer(
       'Copying project files',
       'items'
     );
     let copied = 0;
 
-    try {
-      for (const relativePath of entries) {
-        const sourcePath = path.join(sourceFolder, relativePath);
+    for (const relativePath of entries) {
+      const sourcePath = path.join(sourceFolder, relativePath);
 
-        if (await fs.pathExists(sourcePath)) {
-          await fs.copy(sourcePath, path.join(appFolder, relativePath));
+      if (await fs.pathExists(sourcePath)) {
+        await fs.copy(sourcePath, path.join(appFolder, relativePath));
 
-          progressRenderer.update(++copied, entries.size);
-        }
+        progressRenderer.update(++copied, entries.size);
       }
-    } finally {
-      progressRenderer.close();
     }
   }
 
   private async createInstallScript() {
-    const { tempRoot } = this.context;
-    const scriptPath = path.join(tempRoot, 'install.sh');
+    const { appFolder, nodePath, platform, tempRoot } = this.context;
+    if (!nodePath)
+      throw new Error(
+        'Node runtime must be installed before creating the install script'
+      );
+
+    const scriptRoot = path.dirname(appFolder);
+    const extension = platform === 'win' ? 'cmd' : 'sh';
+    const scriptPath = path.join(scriptRoot, `install.${extension}`);
+    const archiveRoot = path.resolve(tempRoot, '../..');
+
+    if (platform === 'win') {
+      const archiveRelativePath = toWindowsPath(
+        path.relative(scriptRoot, archiveRoot)
+      );
+      const appRelativePath = toWindowsPath(
+        path.relative(archiveRoot, appFolder)
+      );
+      const runtimeRelativePath = toWindowsPath(
+        path.relative(archiveRoot, path.dirname(nodePath))
+      );
+
+      await fs.outputFile(
+        scriptPath,
+        `@echo off
+robocopy "%~dp0${archiveRelativePath}" "%USERPROFILE%" /E /XF install.cmd /NFL /NDL /NJH /NJS
+if %ERRORLEVEL% GEQ 8 exit /b %ERRORLEVEL%
+echo Package extracted to %USERPROFILE%
+set "PATH=%USERPROFILE%\\${runtimeRelativePath};%PATH%"
+cd /d "%USERPROFILE%\\${appRelativePath}"
+call npm run install --if-present
+if errorlevel 1 exit /b %ERRORLEVEL%
+exit /b 0
+`.replace(/\n/g, '\r\n')
+      );
+      return scriptPath;
+    }
+
+    const runtimeBin = toPosixPath(
+      path.relative(scriptRoot, path.dirname(nodePath))
+    );
 
     await fs.outputFile(
       scriptPath,
       `#!/bin/sh
 set -e
 printf "Package extracted to %s\\n" "$(pwd)"
+ROOT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+export PATH="$ROOT_DIR/${runtimeBin}:$PATH"
+cd "$ROOT_DIR/app"
+npm run install --if-present
 `
     );
     await fs.chmod(scriptPath, 0o755);
+    return scriptPath;
   }
 }
 
@@ -300,7 +372,7 @@ export async function packProject({
 
   if (!packageName) throw new Error('package.json name is required');
 
-  const packageBaseName = packageName.replace(/\//g, '-');
+  const packageBaseName = packageName.replace(/[@/]+/g, '-');
   const platform = normalizePlatform(targetPlatform);
   const runtimeArch = normalizeArch(arch, platform);
   const tempRoot = path.join(

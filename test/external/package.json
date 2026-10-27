@@ -1,0 +1,13 @@
+{
+  "name": "fixture-external",
+  "main": "index.cjs",
+  "files": [
+    "assets"
+  ],
+  "dependencies": {
+    "@fixture/transitive": "*"
+  },
+  "optionalDependencies": {
+    "fixture-absent": "*"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "long-chain",
+  "dependencies": {
+    "fixture-long-transitive-dependency-one": "*"
+  }
+}

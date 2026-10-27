@@ -11,11 +11,11 @@ export async function downloadFile(
   targetPath: string,
   label = url
 ) {
-  const progressRenderer = new ProgressRenderer(label);
+  await using progressRenderer = new ProgressRenderer(label);
 
   await fs.ensureDir(path.dirname(targetPath));
 
-  const fileHandle = await open(targetPath, 'w');
+  await using fileHandle = await open(targetPath, 'w');
   let loaded = 0;
   let total = 0;
   let position = 0;
@@ -36,8 +36,5 @@ export async function downloadFile(
     await fs.remove(targetPath);
 
     throw error;
-  } finally {
-    await fileHandle.close();
-    progressRenderer.close();
   }
 }

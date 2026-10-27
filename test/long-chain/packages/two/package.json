@@ -1,0 +1,7 @@
+{
+  "name": "fixture-long-transitive-dependency-two",
+  "main": "index.cjs",
+  "dependencies": {
+    "fixture-long-transitive-dependency-three": "*"
+  }
+}

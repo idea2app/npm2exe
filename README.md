@@ -9,16 +9,33 @@ Pack a JavaScript local project to a **portable executable**.
 
 ## Usage
 
-```bash
-# build your project first
-npm run build
-# pack current project
-npm2exe .
-# pack other project
-npm2exe path/to/project
+### `package.json`
+
+```json
+{
+  "name": "my-app",
+  "version": "1.0.0",
+  "bin": "dist/index.js",
+  "devDependencies": {
+    "typescript": "^6",
+    "npm2exe": "^0.4"
+  },
+  "scripts": {
+    "build": "tsc",
+    "bundle": "npm run build  &&  npm2exe ."
+  }
+}
 ```
 
-Options:
+### Command
+
+```bash
+cd path/to/project
+npm install
+npm run bundle
+```
+
+#### more options
 
 - `--arch <x86|ia32|x64|arm|arm64>` target runtime architecture (`ia32` maps to `x86`, `arm` maps to `armv7l`)
 - `--platform <linux|darwin|win|win32>` target platform (default current platform)
@@ -27,9 +44,9 @@ Options:
 - `--compression-level <0-9>` compression level (default `0`, no compression; higher levels trade speed for a smaller archive)
 - `--verbose` or `-V` enable Verbose output
 
-`npm2exe` reads your [`package.json#bin`][9], installs only production dependencies into a temporary app directory, downloads a matching [stock Node.js runtime][10], then wraps both into a [self-extracting package][10].
+`npm2exe` reads your [`package.json#bin`][9], installs only production dependencies into a temporary staging directory, downloads a matching [stock Node.js runtime][10], then wraps both into a [self-extracting package][10].
 
-## Compared with Node SEA / pkg / nexe / caxa
+## Feature comparison
 
 | Feature          | npm2exe                                                                        | Node SEA                             | pkg                                                       | nexe                                      | caxa                                        |
 | ---------------- | ------------------------------------------------------------------------------ | ------------------------------------ | --------------------------------------------------------- | ----------------------------------------- | ------------------------------------------- |

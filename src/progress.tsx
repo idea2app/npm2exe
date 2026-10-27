@@ -74,6 +74,10 @@ export class ProgressRenderer {
     this.inkApplication?.unmount();
   }
 
+  async [Symbol.asyncDispose]() {
+    this.close();
+  }
+
   private rerender() {
     const { label, loaded, total, unit } = this;
 

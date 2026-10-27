@@ -5,9 +5,7 @@
   "type": "module",
   "bin": "./index.js",
   "dependencies": {
-    "test-parent": "workspace:*"
-  },
-  "scripts": {
-    "test": "node test.js"
+    "test-parent": "workspace:*",
+    "typescript": "^6.0.3"
   }
 }

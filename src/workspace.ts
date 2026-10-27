@@ -5,17 +5,11 @@ import type { PackageJson } from 'type-fest';
 
 import { ProgressRenderer } from './progress.js';
 import { createIgnorePatterns, logStep } from './utility.js';
-
-export interface ProjectFilesCopyInput {
-  sourceFolder: string;
-  appFolder: string;
-  sourcePackage: PackageJson;
-}
-
-interface WorkspaceStagerInput extends ProjectFilesCopyInput {
-  copyProjectFiles(input: ProjectFilesCopyInput): Promise<unknown>;
-  installProductionDependencies(appFolder: string): Promise<unknown>;
-}
+import {
+  DependencyCopier,
+  type ProjectFilesCopyInput,
+  type ProjectFilesCopier
+} from './dependencies.js';
 
 const WORKSPACE_PROTOCOL = 'workspace:';
 const DEPENDENCY_FIELDS = [
@@ -24,16 +18,14 @@ const DEPENDENCY_FIELDS = [
   'optionalDependencies',
   'peerDependencies'
 ] as const;
-const RUNTIME_DEPENDENCY_FIELDS = [
-  'dependencies',
-  'optionalDependencies',
-  'peerDependencies'
-] as const;
 
 export class WorkspaceStager {
   constructor(
-    private readonly copyProjectFiles: WorkspaceStagerInput['copyProjectFiles'],
-    private readonly installProductionDependencies: WorkspaceStagerInput['installProductionDependencies']
+    copyProjectFiles: ProjectFilesCopier,
+    private readonly installProductionDependencies: (
+      appFolder: string
+    ) => Promise<unknown>,
+    private readonly dependencyCopier = new DependencyCopier(copyProjectFiles)
   ) {}
 
   @logStep('stage workspace package')
@@ -57,7 +49,7 @@ export class WorkspaceStager {
       path.join(workspaceRoot, 'package.json')
     )) as PackageJson;
     const workspacePackageName =
-      workspacePackage.name?.trim().replace(/\//g, '-') ||
+      workspacePackage.name?.trim().replace(/[@/]+/g, '-') ||
       path.basename(workspaceRoot);
     const workspaceTempFolder = path.join(
       workspaceRoot,
@@ -72,26 +64,20 @@ export class WorkspaceStager {
     await fs.remove(workspaceTempFolder);
     await fs.remove(appFolder);
     await fs.ensureDir(appFolder);
-    await this.copyWorkspaceFiles(workspaceRoot, workspaceTempFolder);
-    await this.installProductionDependencies(workspaceTempFolder);
-    await this.copyProjectFiles({
-      sourceFolder: stagedPackageFolder,
-      appFolder,
-      sourcePackage
-    });
-    await this.copyResolvedNodeModules({
-      sourcePackageFolder: stagedPackageFolder,
-      targetPackageFolder: appFolder
-    });
-    await fs.remove(workspaceTempFolder);
+    try {
+      await this.copyWorkspaceFiles(workspaceRoot, workspaceTempFolder);
+      await this.installProductionDependencies(workspaceTempFolder);
+      await this.dependencyCopier.copyPackage({
+        sourceFolder: stagedPackageFolder,
+        appFolder,
+        sourcePackage
+      });
+    } finally {
+      await fs.remove(workspaceTempFolder);
+    }
 
     return true;
   }
-
-  private static getRuntimeDependencyNames = (packageJson: PackageJson) =>
-    RUNTIME_DEPENDENCY_FIELDS.flatMap(field =>
-      Object.keys(packageJson[field] || {})
-    );
 
   private static hasWorkspaceProtocolDependency = (packageJson: PackageJson) =>
     DEPENDENCY_FIELDS.some(field =>
@@ -134,139 +120,21 @@ export class WorkspaceStager {
       followSymbolicLinks: false,
       ignore: await createIgnorePatterns(sourceFolder)
     });
-    const progressRenderer = new ProgressRenderer(
+    await using progressRenderer = new ProgressRenderer(
       'Copying workspace files',
       'items'
     );
     let copied = 0;
 
-    try {
-      for (const relativePath of relativePaths) {
-        const sourcePath = path.join(sourceFolder, relativePath);
-        const stats = await fs.lstat(sourcePath);
-        const targetPath = path.join(targetFolder, relativePath);
+    for (const relativePath of relativePaths) {
+      const sourcePath = path.join(sourceFolder, relativePath);
+      const stats = await fs.lstat(sourcePath);
+      const targetPath = path.join(targetFolder, relativePath);
 
-        if (stats.isDirectory()) await fs.ensureDir(targetPath);
-        else await fs.copy(sourcePath, targetPath);
+      if (stats.isDirectory()) await fs.ensureDir(targetPath);
+      else await fs.copy(sourcePath, targetPath);
 
-        progressRenderer.update(++copied, relativePaths.length);
-      }
-    } finally {
-      progressRenderer.close();
+      progressRenderer.update(++copied, relativePaths.length);
     }
-  }
-
-  @logStep('copy resolved workspace node_modules')
-  private async copyResolvedNodeModules({
-    sourcePackageFolder,
-    targetPackageFolder
-  }: Record<`${'source' | 'target'}PackageFolder`, string>) {
-    return this.copyResolvedNodeModulesRecursive({
-      sourcePackageFolder,
-      targetPackageFolder
-    });
-  }
-
-  private async copyResolvedNodeModulesRecursive({
-    sourcePackageFolder,
-    targetPackageFolder
-  }: Record<`${'source' | 'target'}PackageFolder`, string>) {
-    const sourceNodeModulesFolder = path.join(
-      sourcePackageFolder,
-      'node_modules'
-    );
-
-    if (!(await fs.pathExists(sourceNodeModulesFolder))) return;
-
-    const sourcePackage = (await fs.readJSON(
-      path.join(sourcePackageFolder, 'package.json')
-    )) as PackageJson;
-    const targetNodeModulesFolder = path.join(
-      targetPackageFolder,
-      'node_modules'
-    );
-
-    await fs.ensureDir(targetNodeModulesFolder);
-
-    const sourceBinaryFolder = path.join(sourceNodeModulesFolder, '.bin');
-
-    if (await fs.pathExists(sourceBinaryFolder))
-      await fs.copy(
-        sourceBinaryFolder,
-        path.join(targetNodeModulesFolder, '.bin'),
-        { dereference: true }
-      );
-
-    const dependencyNames =
-      WorkspaceStager.getRuntimeDependencyNames(sourcePackage);
-    const progressRenderer = new ProgressRenderer(
-      'Copying resolved workspace node_modules',
-      'items'
-    );
-    let copied = 0;
-
-    try {
-      for (const dependencyName of dependencyNames) {
-        const dependencyPathParts = dependencyName.split('/');
-        const sourceEntry = path.join(
-          sourceNodeModulesFolder,
-          ...dependencyPathParts
-        );
-        const targetEntry = path.join(
-          targetNodeModulesFolder,
-          ...dependencyPathParts
-        );
-        await this.copyInstalledNodeModulesEntry({ sourceEntry, targetEntry });
-
-        progressRenderer.update(++copied, dependencyNames.length);
-      }
-    } finally {
-      progressRenderer.close();
-    }
-  }
-
-  private async copyInstalledNodeModulesEntry({
-    sourceEntry,
-    targetEntry
-  }: Record<`${'source' | 'target'}Entry`, string>) {
-    if (!(await fs.pathExists(sourceEntry))) return;
-
-    const sourceStats = await fs.lstat(sourceEntry);
-
-    if (sourceStats.isSymbolicLink()) {
-      const resolvedEntry = await fs.realpath(sourceEntry);
-
-      if (
-        sourceEntry.includes(`${path.sep}.bin${path.sep}`) ||
-        path.basename(path.dirname(sourceEntry)) === '.bin'
-      )
-        return fs.copy(sourceEntry, targetEntry, { dereference: true });
-
-      if (await fs.pathExists(path.join(resolvedEntry, 'package.json'))) {
-        const resolvedPackage = (await fs.readJSON(
-          path.join(resolvedEntry, 'package.json')
-        )) as PackageJson;
-
-        await fs.ensureDir(targetEntry);
-        await this.copyProjectFiles({
-          sourceFolder: resolvedEntry,
-          appFolder: targetEntry,
-          sourcePackage: resolvedPackage
-        });
-
-        return this.copyResolvedNodeModulesRecursive({
-          sourcePackageFolder: resolvedEntry,
-          targetPackageFolder: targetEntry
-        });
-      }
-
-      return fs.copy(sourceEntry, targetEntry, { dereference: true });
-    }
-
-    if (!sourceStats.isDirectory()) return fs.copy(sourceEntry, targetEntry);
-
-    await fs.ensureDir(targetEntry);
-
-    return fs.copy(sourceEntry, targetEntry);
   }
 }
