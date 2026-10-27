@@ -160,10 +160,11 @@ export class PlatformPackager {
       cwd: tempRoot
     })`${path7z} a -t7z -mx=${compressionLevel} ${archivePath} .`;
 
+    const command = `cmd.exe /d /s /c ""%%T\\${installScript}""`;
     const config = `;!@Install@!UTF-8!
-Title="${path.basename(outputFile, '.exe')}"
+Title=${JSON.stringify(path.basename(outputFile, '.exe'))}
 Directory=""
-RunProgram="cmd.exe /c ${installScript}"
+RunProgram=${JSON.stringify(command)}
 ;!@InstallEnd@!
 `;
     async function* mergeStreams() {
